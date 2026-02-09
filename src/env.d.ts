@@ -17,7 +17,7 @@ interface Window {
       saveAttachment(wsId: string, fileName: string, base64Data: string): Promise<{ success: boolean; path?: string }>
       readAttachment(filePath: string): Promise<string | null>
       pasteImage(wsId: string): Promise<{ success: boolean; fileName?: string; filePath?: string; imageUrl?: string; size?: number; error?: string }>
-      export(startDate: string, endDate: string, format: 'md' | 'pdf'): Promise<{ success: boolean; filePath?: string; count?: number; canceled?: boolean; error?: string }>
+      export(startDate: string, endDate: string, format: 'md' | 'pdf', wsId?: string): Promise<{ success: boolean; filePath?: string; count?: number; canceled?: boolean; error?: string }>
       openPath(filePath: string): Promise<void>
     }
     todos: {

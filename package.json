@@ -1,6 +1,6 @@
 {
   "name": "quickstart",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Quick launch sidebar tool for notes, todos, translation, and AI chat",
   "main": "./out/main/index.js",
   "author": "QuickStart",

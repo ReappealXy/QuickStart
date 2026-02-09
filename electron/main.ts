@@ -831,20 +831,46 @@ function setupIPC(): void {
   // ---- Notes Export ----
 
   // Collect notes by updatedAt from index.json
-  function collectNotesInRange(wsId: string, startDate: string, endDate: string): { date: string; content: string; filePath: string }[] {
+  function collectNotesInRange(wsId: string, startDate: string, endDate: string): { date: string; title: string; content: string; filePath: string }[] {
     const root = getWsNotesRoot(wsId)
-    const results: { date: string; content: string; filePath: string }[] = []
+    const results: { date: string; title: string; content: string; filePath: string }[] = []
     try {
+      // Build a fileName->metadata map from index.json for title-based filenames
+      const indexPath = join(root, 'index.json')
+      const indexData = safeReadJSON(indexPath, null) as { notes?: Array<{ fileName?: string; title?: string; createdAt?: string; updatedAt?: string }> } | null
+      const notesMeta = indexData?.notes || []
+      const metaMap = new Map<string, { title: string; date: string }>()
+      for (const n of notesMeta) {
+        if (n.fileName) {
+          const dateStr = (n.updatedAt || n.createdAt || '').slice(0, 10)
+          metaMap.set(n.fileName, { title: n.title || n.fileName.replace('.md', ''), date: dateStr })
+        }
+      }
+
       const entries = readdirSync(root, { withFileTypes: true })
       for (const entry of entries) {
         if (!entry.isDirectory() || !/^\d{4}-\d{2}$/.test(entry.name)) continue
         const monthDir = join(root, entry.name)
         for (const file of readdirSync(monthDir).filter((f) => f.endsWith('.md'))) {
+          // Try date from filename first (legacy format: 2026-02-09_xxx.md)
           const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})/)
-          if (!dateMatch) continue
-          const fileDate = dateMatch[1]
+          let fileDate = dateMatch ? dateMatch[1] : ''
+          let title = file.replace('.md', '')
+
+          // If no date in filename, look up from index.json metadata
+          if (!fileDate) {
+            const meta = metaMap.get(file)
+            if (meta) {
+              fileDate = meta.date
+              title = meta.title
+            } else {
+              // Fallback: use the month folder name + day 01
+              fileDate = entry.name + '-01'
+            }
+          }
+
           if (fileDate >= startDate && fileDate <= endDate) {
-            results.push({ date: fileDate, content: readFileSync(join(monthDir, file), 'utf-8'), filePath: join(monthDir, file) })
+            results.push({ date: fileDate, title, content: readFileSync(join(monthDir, file), 'utf-8'), filePath: join(monthDir, file) })
           }
         }
       }
@@ -856,7 +882,7 @@ function setupIPC(): void {
           if (!dateMatch) continue
           const fileDate = dateMatch[1]
           if (fileDate >= startDate && fileDate <= endDate) {
-            results.push({ date: fileDate, content: readFileSync(join(oldDir, file), 'utf-8'), filePath: join(oldDir, file) })
+            results.push({ date: fileDate, title: file.replace('.md', ''), content: readFileSync(join(oldDir, file), 'utf-8'), filePath: join(oldDir, file) })
           }
         }
       }
@@ -864,11 +890,11 @@ function setupIPC(): void {
     return results.sort((a, b) => a.date.localeCompare(b.date))
   }
 
-  ipcMain.handle('notes:export', async (_e, startDate: string, endDate: string, format: 'md' | 'pdf') => {
+  ipcMain.handle('notes:export', async (_e, startDate: string, endDate: string, format: 'md' | 'pdf', wsId?: string) => {
     if (!mainWindow) return { success: false, error: 'no window' }
     try {
-      const activeWsId = readConfig().activeWorkspaceId || 'default'
-      const notes = collectNotesInRange(activeWsId, startDate, endDate)
+      const targetWsId = wsId || readConfig().activeWorkspaceId || 'default'
+      const notes = collectNotesInRange(targetWsId, startDate, endDate)
       if (notes.length === 0) return { success: false, error: '选定日期范围内没有记录' }
 
       const defaultName = startDate === endDate
@@ -883,7 +909,7 @@ function setupIPC(): void {
         })
         if (result.canceled || !result.filePath) return { success: false, canceled: true }
 
-        // Merge all notes into one MD with date headers
+        // Merge all notes into one MD with date headers and titles
         let merged = ''
         let currentDate = ''
         for (const note of notes) {
@@ -892,6 +918,7 @@ function setupIPC(): void {
             merged += `# ${note.date}\n\n`
             currentDate = note.date
           }
+          if (note.title) merged += `## ${note.title}\n\n`
           merged += note.content + '\n\n'
         }
         writeFileSync(result.filePath, merged.trim(), 'utf-8')

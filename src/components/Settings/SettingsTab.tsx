@@ -800,6 +800,23 @@ function ExportSection({ isDark, glassCard, setToast }: {
   const [isExportingPDF, setIsExportingPDF] = useState(false)
   const busy = isExportingMD || isExportingPDF
 
+  // Workspace list for notes export
+  const workspaces = useSettingsStore((s) => s.workspaces)
+  const activeWsId = useSettingsStore((s) => s.activeWorkspaceId)
+  const [exportWsId, setExportWsId] = useState(activeWsId || 'default')
+  const [wsDropOpen, setWsDropOpen] = useState(false)
+  const wsDropRef = useRef<HTMLDivElement>(null)
+  const selectedWs = workspaces.find((w) => w.id === exportWsId) || workspaces[0]
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wsDropRef.current && !wsDropRef.current.contains(e.target as Node)) setWsDropOpen(false)
+    }
+    if (wsDropOpen) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [wsDropOpen])
+
   const setPreset = (days: number) => {
     const end = new Date()
     const start = new Date()
@@ -814,7 +831,7 @@ function ExportSection({ isDark, glassCard, setToast }: {
     setLoading(true)
     try {
       const res = source === 'notes'
-        ? await window.api.notes.export(startDate, endDate, format)
+        ? await window.api.notes.export(startDate, endDate, format, exportWsId)
         : await window.api.todos.export(startDate, endDate, format)
       if (res.canceled) { /* user cancelled */ }
       else if (res.success) {
@@ -857,6 +874,71 @@ function ExportSection({ isDark, glassCard, setToast }: {
           <button onClick={() => setSource('notes')} style={tabStyle(source === 'notes')}>
             <span className="flex items-center gap-1.5"><FileText size={11} />记录</span>
           </button>
+          {/* Workspace selector — only when source is notes */}
+          {source === 'notes' && workspaces.length > 0 && (
+            <div ref={wsDropRef} className="relative">
+              <button
+                onClick={() => setWsDropOpen(!wsDropOpen)}
+                className="flex items-center gap-1.5 cursor-pointer transition-all"
+                style={{
+                  padding: '5px 10px 5px 8px',
+                  borderRadius: '8px',
+                  background: 'rgba(139,92,246,0.06)',
+                  border: wsDropOpen ? '1px solid rgba(139,92,246,0.25)' : '1px solid transparent',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  color: '#6d28d9',
+                  maxWidth: '110px',
+                }}
+                onMouseEnter={(e) => { if (!wsDropOpen) e.currentTarget.style.border = '1px solid rgba(139,92,246,0.15)' }}
+                onMouseLeave={(e) => { if (!wsDropOpen) e.currentTarget.style.border = '1px solid transparent' }}
+              >
+                <div className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: selectedWs?.color || '#8b5cf6' }} />
+                <span className="truncate">{selectedWs?.name || '默认'}</span>
+                <ChevronDown
+                  size={10}
+                  className="flex-shrink-0 transition-transform duration-200"
+                  style={{ transform: wsDropOpen ? 'rotate(180deg)' : 'none', opacity: 0.5 }}
+                />
+              </button>
+              {wsDropOpen && (
+                <div
+                  className="absolute left-0 mt-1 z-50 animate-fadeInUp"
+                  style={{
+                    minWidth: '130px',
+                    background: '#fff',
+                    borderRadius: '10px',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    boxShadow: '0 8px 24px rgba(139,92,246,0.10), 0 2px 8px rgba(0,0,0,0.04)',
+                    padding: '4px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {workspaces.map((ws) => (
+                    <button
+                      key={ws.id}
+                      onClick={() => { setExportWsId(ws.id); setWsDropOpen(false) }}
+                      className="w-full flex items-center gap-2 text-left transition-all"
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '7px',
+                        fontSize: '11px',
+                        fontWeight: ws.id === exportWsId ? 600 : 500,
+                        color: ws.id === exportWsId ? '#6d28d9' : '#52525b',
+                        background: ws.id === exportWsId ? 'rgba(139,92,246,0.08)' : 'transparent',
+                      }}
+                      onMouseEnter={(e) => { if (ws.id !== exportWsId) e.currentTarget.style.background = 'rgba(139,92,246,0.05)' }}
+                      onMouseLeave={(e) => { if (ws.id !== exportWsId) e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <div className="w-[7px] h-[7px] rounded-full flex-shrink-0" style={{ background: ws.color || '#8b5cf6' }} />
+                      <span className="truncate">{ws.name}</span>
+                      {ws.id === exportWsId && <Check size={11} className="ml-auto flex-shrink-0" style={{ color: '#8b5cf6' }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button onClick={() => setSource('todos')} style={tabStyle(source === 'todos')}>
             <span className="flex items-center gap-1.5"><ListChecks size={11} />清单</span>
           </button>
@@ -1322,7 +1404,7 @@ export default function SettingsTab() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] font-bold text-zinc-700 dark:text-zinc-200">QuickStart</p>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.5.0 · 桌面快捷效率工具</p>
+            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.5.1 · 桌面快捷效率工具</p>
             <button
               onClick={() => window.api.shell.openExternal('https://github.com/ReappealXy')}
               className="inline-flex items-center gap-1 mt-1 text-[9px] font-medium transition-all cursor-pointer"

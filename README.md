@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.0-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.1-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -113,6 +113,12 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ## 版本更新
 
+### v0.5.1 (2026-02-09)
+
+- **导出工作区选择** —— 数据导出"记录"模式新增自定义下拉菜单，可选择导出指定工作区的记录
+- **导出文件名匹配修复** —— 修复标题命名的笔记（如「方法论.md」）无法被导出的问题，现通过 index.json 元数据匹配日期
+- **导出内容标题** —— 导出的 Markdown/PDF 中每条记录自动包含标题（`## 标题`）
+
 ### v0.5.0 (2026-02-09)
 
 - **工作区下拉菜单** —— 移除侧边栏抽屉，改为记录页顶部的轻量下拉菜单，支持创建/切换/重命名/删除工作区
@@ -152,7 +158,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.5.0.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.5.1.exe`。
 
 安装过程支持：
 - 自定义安装目录

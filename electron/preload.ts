@@ -15,8 +15,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('notes:readAttachment', filePath),
     pasteImage: (wsId: string) =>
       ipcRenderer.invoke('notes:pasteImage', wsId),
-    export: (startDate: string, endDate: string, format: 'md' | 'pdf') =>
-      ipcRenderer.invoke('notes:export', startDate, endDate, format),
+    export: (startDate: string, endDate: string, format: 'md' | 'pdf', wsId?: string) =>
+      ipcRenderer.invoke('notes:export', startDate, endDate, format, wsId),
     openPath: (filePath: string) => ipcRenderer.invoke('notes:openPath', filePath),
   },
   todos: {

@@ -1,0 +1,81 @@
+{
+  "name": "quickstart",
+  "version": "0.1.0",
+  "description": "Quick launch sidebar tool for notes, todos, translation, and AI chat",
+  "main": "./out/main/index.js",
+  "author": "QuickStart",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && electron-builder --win",
+    "build:vite": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "electron-vite build && electron-builder --win --dir",
+    "dist": "electron-vite build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.quickstart.app",
+    "productName": "QuickStart",
+    "copyright": "Copyright (c) 2026 ReappealXy",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "QuickStart",
+      "runAfterFinish": true,
+      "license": "build/license.txt",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052"
+    }
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "lucide-react": "^0.563.0",
+    "markdown-it": "^14.1.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.24",
+    "electron": "^40.2.1",
+    "electron-builder": "^26.7.0",
+    "electron-vite": "^3.1.0",
+    "iconv-lite": "^0.7.2",
+    "png-to-ico": "^2.1.8",
+    "postcss": "^8.5.6",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useTodoStore } from '../../stores/todoStore'
+// Todos are global (not workspace-scoped)
 import {
   ChevronLeft, ChevronRight, Palette, Trash2,
   Circle, CheckCircle2, CheckSquare, Plus, CalendarDays, X, Check, GripVertical

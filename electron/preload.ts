@@ -26,6 +26,14 @@ contextBridge.exposeInMainWorld('api', {
     export: (startDate: string, endDate: string, format: 'md' | 'pdf') =>
       ipcRenderer.invoke('todos:export', startDate, endDate, format),
   },
+  workspace: {
+    list: () => ipcRenderer.invoke('workspace:list'),
+    getActive: () => ipcRenderer.invoke('workspace:getActive'),
+    setActive: (wsId: string) => ipcRenderer.invoke('workspace:setActive', wsId),
+    create: (name: string, color: string) => ipcRenderer.invoke('workspace:create', name, color),
+    rename: (wsId: string, name: string, color?: string) => ipcRenderer.invoke('workspace:rename', wsId, name, color),
+    delete: (wsId: string) => ipcRenderer.invoke('workspace:delete', wsId),
+  },
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     set: (config: Record<string, unknown>) => ipcRenderer.invoke('config:set', config),
@@ -43,14 +51,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   storage: {
     selectDir: (title: string) => ipcRenderer.invoke('storage:selectDir', title),
-    getNotesPath: () => ipcRenderer.invoke('storage:getNotesPath'),
-    getDefaultNotesPath: () => ipcRenderer.invoke('storage:getDefaultNotesPath'),
-    setNotesPath: (newPath: string, migrate: boolean) => ipcRenderer.invoke('storage:setNotesPath', newPath, migrate),
-    resetNotesPath: (migrate: boolean) => ipcRenderer.invoke('storage:resetNotesPath', migrate),
+    getRootPath: () => ipcRenderer.invoke('storage:getRootPath'),
+    setRootPath: (newPath: string | null) => ipcRenderer.invoke('storage:setRootPath', newPath),
     getTodosPath: () => ipcRenderer.invoke('storage:getTodosPath'),
-    getDefaultTodosPath: () => ipcRenderer.invoke('storage:getDefaultTodosPath'),
-    setTodosPath: (newPath: string, migrate: boolean) => ipcRenderer.invoke('storage:setTodosPath', newPath, migrate),
-    resetTodosPath: (migrate: boolean) => ipcRenderer.invoke('storage:resetTodosPath', migrate),
+    setTodosPath: (newPath: string | null) => ipcRenderer.invoke('storage:setTodosPath', newPath),
     clearNotes: () => ipcRenderer.invoke('storage:clearNotes'),
     clearTodos: () => ipcRenderer.invoke('storage:clearTodos'),
   },

@@ -137,116 +137,338 @@ function getDataDir(): string {
   return dir
 }
 
-// ── Dynamic storage path helpers ──
-
-function getDefaultNotesRoot(): string {
-  return join(getDataDir(), 'workspaces', 'default')
+// ── Workspace config types ──
+interface WorkspaceDisk {
+  id: string; name: string; color: string; folderName: string
+}
+interface ConfigV3 {
+  schemaVersion: number
+  activeWorkspaceId: string
+  workspaces: WorkspaceDisk[]
+  rootPath?: string // global workspace root (null = default)
+  hotkey?: string
+  autoStart?: boolean
+  ai?: unknown
+  [key: string]: unknown
 }
 
-function getNotesRoot(): string {
-  const configPath = join(getDataDir(), 'config.json')
-  const config = safeReadJSON<Record<string, unknown>>(configPath, {})
-  const custom = config.notesRootPath as string | undefined
-  if (custom && typeof custom === 'string') {
-    if (existsSync(custom)) return custom
-    console.warn(`Custom notes root "${custom}" missing. Falling back to default.`)
-    delete config.notesRootPath
-    safeWriteJSON(configPath, config)
-  }
-  const def = getDefaultNotesRoot()
-  if (!existsSync(def)) mkdirSync(def, { recursive: true })
-  return def
+// ── Read / write config helpers ──
+function getConfigPath(): string { return join(getDataDir(), 'config.json') }
+function readConfig(): ConfigV3 {
+  return safeReadJSON<ConfigV3>(getConfigPath(), {
+    schemaVersion: 3, activeWorkspaceId: 'default', workspaces: []
+  })
+}
+function writeConfig(cfg: ConfigV3): void { safeWriteJSON(getConfigPath(), cfg) }
+
+// ── Workspace folder name sanitisation ──
+function sanitizeWsFolder(name: string): string {
+  let clean = name.replace(/[\\/:*?"<>|\r\n]/g, '').trim()
+  if (clean.length > 60) clean = clean.substring(0, 60).trim()
+  return clean || '工作区'
 }
 
-function getDefaultTodosDir(): string {
-  return join(getDataDir(), 'todos')
+function uniqueWsFolder(root: string, baseName: string): string {
+  if (!existsSync(join(root, baseName))) return baseName
+  let i = 2
+  while (existsSync(join(root, `${baseName} (${i})`))) i++
+  return `${baseName} (${i})`
 }
 
+// ── Workspace path helpers (workspace-name-based folders under a single root) ──
+function getWorkspacesRoot(): string {
+  const cfg = readConfig()
+  const root = cfg.rootPath || join(getDataDir(), 'workspaces')
+  if (!existsSync(root)) mkdirSync(root, { recursive: true })
+  return root
+}
+
+function getWsDir(wsId: string): string {
+  const cfg = readConfig()
+  const ws = cfg.workspaces.find((w) => w.id === wsId)
+  const folderName = ws?.folderName || '默认'
+  const dir = join(getWorkspacesRoot(), folderName)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function getWsNotesRoot(wsId: string): string {
+  const dir = join(getWsDir(wsId), 'Notes')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+function getWsAttachDir(wsId: string): string {
+  const dir = join(getWsDir(wsId), 'Notes', 'attachments')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+// getWsTodosDir removed — todos are global, use getTodosDir()
+
+// Global todos dir (not workspace-scoped, configurable)
 function getTodosDir(): string {
-  const configPath = join(getDataDir(), 'config.json')
-  const config = safeReadJSON<Record<string, unknown>>(configPath, {})
-  const custom = config.todosPath as string | undefined
-  if (custom && typeof custom === 'string') {
-    if (existsSync(custom)) return custom
-    console.warn(`Custom todos dir "${custom}" missing. Falling back to default.`)
-    delete config.todosPath
-    safeWriteJSON(configPath, config)
-  }
-  const def = getDefaultTodosDir()
-  if (!existsSync(def)) mkdirSync(def, { recursive: true })
-  return def
+  const cfg = readConfig()
+  const dir = (cfg as Record<string,unknown>).todosPath as string || join(getDataDir(), 'todos')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
 }
 
-/** Return the default attachments directory (inside notes root) */
-function getDefaultAttachDir(): string {
-  return join(getNotesRoot(), 'attachments')
+// Legacy helpers (delegate to active workspace)
+function getAttachmentsDir(): string { return getWsAttachDir(readConfig().activeWorkspaceId || 'default') }
+
+// ── Title sanitisation for file naming ──
+function sanitizeTitle(title: string): string {
+  let clean = title.replace(/[\\/:*?"<>|\r\n]/g, '').trim()
+  if (clean.length > 80) clean = clean.substring(0, 80).trim()
+  return clean || '无标题'
 }
 
-/** Read current attachments path: use notes root's attachments subdir, or legacy custom path */
-function getAttachmentsDir(): string {
-  const configPath = join(getDataDir(), 'config.json')
-  const config = safeReadJSON<Record<string, unknown>>(configPath, {})
-
-  // Legacy: standalone attachmentsPath (backward compat)
-  const legacyCustom = config.attachmentsPath as string | undefined
-  if (legacyCustom && typeof legacyCustom === 'string') {
-    if (existsSync(legacyCustom)) return legacyCustom
-    console.warn(`Custom attachments dir "${legacyCustom}" missing. Falling back.`)
-    delete config.attachmentsPath
-    safeWriteJSON(configPath, config)
-  }
-
-  // Default: {notesRoot}/attachments
-  const defaultDir = join(getNotesRoot(), 'attachments')
-  if (!existsSync(defaultDir)) mkdirSync(defaultDir, { recursive: true })
-  return defaultDir
+function uniqueMdName(dir: string, baseName: string): string {
+  if (!existsSync(join(dir, `${baseName}.md`))) return `${baseName}.md`
+  let i = 2
+  while (existsSync(join(dir, `${baseName} (${i}).md`))) i++
+  return `${baseName} (${i}).md`
 }
 
+// ── Ensure dirs & migrations ──
 function ensureDataDirs(): void {
   const dataDir = getDataDir()
-  const dirs = [
-    join(dataDir, 'workspaces', 'default', 'notes'),
-    join(dataDir, 'workspaces', 'default', 'attachments'),
-    join(dataDir, 'todos'),
-    join(dataDir, 'backups')
-  ]
-  for (const dir of dirs) {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  if (!existsSync(join(dataDir, 'backups'))) mkdirSync(join(dataDir, 'backups'), { recursive: true })
+
+  // Default config
+  const cfgPath = getConfigPath()
+  if (!existsSync(cfgPath)) {
+    writeConfig({
+      schemaVersion: 3,
+      activeWorkspaceId: 'default',
+      workspaces: [
+        { id: 'default', name: '默认', color: '#6366f1', folderName: '默认' }
+      ],
+      hotkey: 'Ctrl+Shift+Q',
+      alwaysOnTop: true,
+    })
   }
 
-  // Default workspace index
-  const indexPath = join(dataDir, 'workspaces', 'default', 'index.json')
-  if (!existsSync(indexPath)) {
-    safeWriteJSON(indexPath, {
-      workspace: {
-        id: 'default',
-        name: '默认',
-        color: '#6366f1',
-        icon: 'inbox',
-        createdAt: new Date().toISOString()
-      },
+  // Run migrations
+  migrateToV3()
+
+  // Move any leftover workspace Todos/ to global todos dir
+  consolidateGlobalTodos()
+
+  // Ensure default workspace + global todos
+  ensureWsStructure('default')
+  getTodosDir() // ensure global todos dir exists
+}
+
+/** Move todos from workspace Todos/ folders to global todos dir (one-time cleanup) */
+function consolidateGlobalTodos(): void {
+  const cfg = readConfig()
+  const root = cfg.rootPath || join(getDataDir(), 'workspaces')
+  const globalTodos = join(getDataDir(), 'todos')
+  if (!existsSync(globalTodos)) mkdirSync(globalTodos, { recursive: true })
+  for (const ws of cfg.workspaces) {
+    const wsTodos = join(root, ws.folderName, 'Todos')
+    if (existsSync(wsTodos)) {
+      for (const f of readdirSync(wsTodos).filter((f) => f.endsWith('.json'))) {
+        const s = join(wsTodos, f); const d = join(globalTodos, f)
+        if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+      }
+      // Remove the workspace Todos/ folder after migration
+      try {
+        for (const f of readdirSync(wsTodos)) { try { unlinkSync(join(wsTodos, f)) } catch {} }
+        const { rmdirSync } = require('fs')
+        rmdirSync(wsTodos)
+      } catch {}
+    }
+  }
+}
+
+/** Ensure workspace folder structure: wsDir/Notes/ (workspace only holds notes) */
+function ensureWsStructure(wsId: string): void {
+  const notesDir = getWsNotesRoot(wsId)
+  const attachDir = getWsAttachDir(wsId)
+  for (const d of [notesDir, attachDir]) {
+    if (!existsSync(d)) mkdirSync(d, { recursive: true })
+  }
+  const idxPath = join(notesDir, 'index.json')
+  if (!existsSync(idxPath)) {
+    const cfg = readConfig()
+    const ws = cfg.workspaces.find((w) => w.id === wsId)
+    safeWriteJSON(idxPath, {
+      workspace: { id: wsId, name: ws?.name || '默认', color: ws?.color || '#6366f1', icon: 'inbox', createdAt: new Date().toISOString() },
       notes: []
     })
   }
+}
 
-  // Default config
-  const configPath = join(dataDir, 'config.json')
-  if (!existsSync(configPath)) {
-    safeWriteJSON(configPath, {
-      schemaVersion: 1,
-      theme: 'light',
-      hotkey: 'Ctrl+Shift+Q',
-      alwaysOnTop: true,
-      hideOnClickOutside: false,
-      ai: {
-        apiBase: '',
-        apiKey: '',
-        model: 'gpt-4o-mini',
-        temperature: 0.7,
-        maxTokens: 2048
+/** Migrate from older schemas to v3 (workspace-name-folder model) */
+function migrateToV3(): void {
+  const cfg = safeReadJSON<Record<string, unknown>>(getConfigPath(), {})
+  const ver = (cfg.schemaVersion as number) || 0
+  if (ver >= 3) return
+  console.log(`Migrating config from v${ver} to v3 (workspace-name folders)...`)
+
+  const dataDir = getDataDir()
+  const oldWsRoot = join(dataDir, 'workspaces')
+
+  // --- Phase 1: handle v1 → v2 data (old flat notes/todos) ---
+  if (ver < 2) {
+    const oldNotesRoot = (cfg.notesRootPath as string) || join(oldWsRoot, 'default')
+    const oldTodosDir = (cfg.todosPath as string) || join(dataDir, 'todos')
+    const tmpDir = join(oldWsRoot, 'default')
+    if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true })
+
+    // Copy notes into default workspace
+    if (oldNotesRoot !== tmpDir && existsSync(oldNotesRoot)) {
+      for (const entry of ['index.json']) {
+        const src = join(oldNotesRoot, entry)
+        if (existsSync(src) && !existsSync(join(tmpDir, entry))) copyFileSync(src, join(tmpDir, entry))
       }
-    })
+      try {
+        for (const e of readdirSync(oldNotesRoot, { withFileTypes: true })) {
+          if (e.isDirectory() && (/^\d{4}-\d{2}$/.test(e.name) || e.name === 'notes' || e.name === 'attachments')) {
+            const srcSub = join(oldNotesRoot, e.name)
+            const dstSub = join(tmpDir, e.name)
+            if (!existsSync(dstSub)) mkdirSync(dstSub, { recursive: true })
+            for (const f of readdirSync(srcSub)) {
+              const s = join(srcSub, f); const d = join(dstSub, f)
+              if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Copy todos to global todos dir
+    const globalTodos = join(dataDir, 'todos')
+    if (!existsSync(globalTodos)) mkdirSync(globalTodos, { recursive: true })
+    if (oldTodosDir && existsSync(oldTodosDir) && oldTodosDir !== globalTodos) {
+      for (const f of readdirSync(oldTodosDir).filter((f) => f.endsWith('.json'))) {
+        const s = join(oldTodosDir, f); const d = join(globalTodos, f)
+        if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+      }
+    }
+
+    // Rename old filenames
+    const idxPath = join(tmpDir, 'index.json')
+    const idx = safeReadJSON<{ notes?: { id: string; title?: string }[] }>(idxPath, { notes: [] })
+    const titleMap = new Map((idx.notes || []).map((n) => [n.id, n.title || '无标题']))
+    try {
+      for (const e of readdirSync(tmpDir, { withFileTypes: true })) {
+        if (!e.isDirectory() || !/^\d{4}-\d{2}$/.test(e.name)) continue
+        const monthDir = join(tmpDir, e.name)
+        for (const f of readdirSync(monthDir).filter((ff) => ff.endsWith('.md'))) {
+          const m = f.match(/^\d{4}-\d{2}-\d{2}_([^.]+)\.md$/)
+          if (!m) continue
+          const noteId = m[1]; const title = sanitizeTitle(titleMap.get(noteId) || noteId)
+          const newName = uniqueMdName(monthDir, title)
+          if (f !== newName) { try { renameSync(join(monthDir, f), join(monthDir, newName)) } catch {} }
+          const ni = (idx.notes || []).findIndex((n) => n.id === noteId)
+          if (ni >= 0) (idx.notes![ni] as Record<string, unknown>).fileName = newName
+        }
+      }
+      safeWriteJSON(idxPath, idx)
+    } catch {}
   }
+
+  // --- Phase 2: restructure v2 data into v3 workspace-name folders ---
+  // v2 had: workspaces/{id}/ with notes at root, attachments/, todos/
+  // v3 has:  workspaces/{name}/ with Notes/ (index+months+attachments), Todos/
+  const oldWorkspaces = (cfg.workspaces as { id: string; name: string; color: string; folderPath?: string | null }[]) || []
+  if (oldWorkspaces.length === 0) {
+    oldWorkspaces.push({ id: 'default', name: '默认', color: '#6366f1' })
+  }
+
+  // Global todos dir for all workspace todos migration
+  const globalTodosDir = join(dataDir, 'todos')
+  if (!existsSync(globalTodosDir)) mkdirSync(globalTodosDir, { recursive: true })
+
+  const newWorkspaces: WorkspaceDisk[] = []
+  for (const ows of oldWorkspaces) {
+    const folderName = sanitizeWsFolder(ows.name)
+    const uniqueName = uniqueWsFolder(oldWsRoot, folderName)
+    const newDir = join(oldWsRoot, uniqueName)
+    const notesDir = join(newDir, 'Notes')
+    for (const d of [notesDir, join(notesDir, 'attachments')]) {
+      if (!existsSync(d)) mkdirSync(d, { recursive: true })
+    }
+
+    // Locate old workspace folder
+    const oldDir = (ows.folderPath && existsSync(ows.folderPath))
+      ? ows.folderPath
+      : join(oldWsRoot, ows.id)
+
+    if (existsSync(oldDir) && oldDir !== newDir) {
+      // Move index.json → Notes/index.json
+      const oldIdx = join(oldDir, 'index.json')
+      if (existsSync(oldIdx) && !existsSync(join(notesDir, 'index.json'))) {
+        copyFileSync(oldIdx, join(notesDir, 'index.json'))
+      }
+      // Move YYYY-MM/ folders → Notes/YYYY-MM/
+      try {
+        for (const e of readdirSync(oldDir, { withFileTypes: true })) {
+          if (e.isDirectory() && /^\d{4}-\d{2}$/.test(e.name)) {
+            const srcMonth = join(oldDir, e.name); const dstMonth = join(notesDir, e.name)
+            if (!existsSync(dstMonth)) mkdirSync(dstMonth, { recursive: true })
+            for (const f of readdirSync(srcMonth)) {
+              const s = join(srcMonth, f); const d = join(dstMonth, f)
+              if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+            }
+          }
+        }
+      } catch {}
+      // Move attachments/ → Notes/attachments/
+      const oldAttach = join(oldDir, 'attachments')
+      if (existsSync(oldAttach)) {
+        const newAttach = join(notesDir, 'attachments')
+        for (const f of readdirSync(oldAttach)) {
+          const s = join(oldAttach, f); const d = join(newAttach, f)
+          if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+        }
+      }
+      // Move old workspace todos/ → global todos dir
+      const oldTodos = join(oldDir, 'todos')
+      if (existsSync(oldTodos)) {
+        for (const f of readdirSync(oldTodos).filter((f) => f.endsWith('.json'))) {
+          const s = join(oldTodos, f); const d = join(globalTodosDir, f)
+          if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+        }
+      }
+      // Also check Todos/ (v3 early format)
+      const oldTodos2 = join(oldDir, 'Todos')
+      if (existsSync(oldTodos2) && oldTodos2 !== oldTodos) {
+        for (const f of readdirSync(oldTodos2).filter((f) => f.endsWith('.json'))) {
+          const s = join(oldTodos2, f); const d = join(globalTodosDir, f)
+          if (!existsSync(d)) { try { copyFileSync(s, d) } catch {} }
+        }
+      }
+    }
+
+    // Ensure Notes/index.json exists
+    if (!existsSync(join(notesDir, 'index.json'))) {
+      safeWriteJSON(join(notesDir, 'index.json'), {
+        workspace: { id: ows.id, name: ows.name, color: ows.color, createdAt: new Date().toISOString() },
+        notes: []
+      })
+    }
+
+    newWorkspaces.push({ id: ows.id, name: ows.name, color: ows.color, folderName: uniqueName })
+  }
+
+  // Write v3 config
+  const newCfg: ConfigV3 = {
+    schemaVersion: 3,
+    activeWorkspaceId: (cfg.activeWorkspaceId as string) || 'default',
+    workspaces: newWorkspaces,
+    hotkey: (cfg.hotkey as string) || 'Ctrl+Shift+Q',
+    autoStart: cfg.autoStart as boolean | undefined,
+    ai: cfg.ai,
+  }
+  for (const k of Object.keys(cfg)) {
+    if (['schemaVersion', 'activeWorkspaceId', 'workspaces', 'hotkey', 'autoStart', 'ai', 'notesRootPath', 'todosPath', 'attachmentsPath', 'theme', 'alwaysOnTop', 'hideOnClickOutside', 'folderPath', 'rootPath'].includes(k)) continue
+    newCfg[k] = cfg[k]
+  }
+  writeConfig(newCfg)
+  console.log('Migration to v3 complete.')
 }
 
 // ============================================================
@@ -450,49 +672,33 @@ function setupIPC(): void {
     shell.openExternal(url)
   })
 
-  // ---- Notes (date-based folder structure) ----
-  // Structure: {notesRoot}/YYYY-MM/YYYY-MM-DD_{id}.md
-  //            {notesRoot}/assets/  (images)
-  //            {notesRoot}/index.json (metadata)
+  // ---- Notes (workspace-aware, title-based filenames) ----
 
-  // Migrate old flat notes/ structure to date-based on first access
-  function migrateNotesStructure(): void {
-    const root = getNotesRoot()
-    const oldNotesDir = join(root, 'notes')
-    if (!existsSync(oldNotesDir)) return
-    const files = readdirSync(oldNotesDir).filter((f) => f.endsWith('.md'))
-    if (files.length === 0) return
-    let migrated = 0
-    for (const file of files) {
-      // Expected old format: YYYY-MM-DD_id.md
-      const match = file.match(/^(\d{4}-\d{2})-\d{2}_/)
-      if (!match) continue
-      const monthDir = join(root, match[1])
-      if (!existsSync(monthDir)) mkdirSync(monthDir, { recursive: true })
-      const src = join(oldNotesDir, file)
-      const dest = join(monthDir, file)
-      if (!existsSync(dest)) {
-        try { copyFileSync(src, dest); unlinkSync(src); migrated++ } catch {}
-      }
+  function findNoteFile(wsId: string, noteId: string): string | null {
+    const root = getWsNotesRoot(wsId)
+    const idxPath = join(root, 'index.json')
+    const idx = safeReadJSON<{ notes?: Record<string, unknown>[] }>(idxPath, { notes: [] })
+    const noteMeta = (idx.notes || []).find((n) => n.id === noteId) as Record<string, unknown> | undefined
+    if (noteMeta?.fileName) {
+      try {
+        for (const e of readdirSync(root, { withFileTypes: true })) {
+          if (e.isDirectory() && /^\d{4}-\d{2}$/.test(e.name)) {
+            const fp = join(root, e.name, noteMeta.fileName as string)
+            if (existsSync(fp)) return fp
+          }
+        }
+      } catch {}
     }
-    if (migrated > 0) console.log(`Migrated ${migrated} notes to date-based folders`)
-  }
-
-  // Find a note .md file by id across all month folders
-  function findNoteFile(noteId: string): string | null {
-    const root = getNotesRoot()
-    // Search month folders first (new structure)
+    // Fallback scan
     try {
-      const entries = readdirSync(root, { withFileTypes: true })
-      for (const entry of entries) {
-        if (entry.isDirectory() && /^\d{4}-\d{2}$/.test(entry.name)) {
-          const monthDir = join(root, entry.name)
+      for (const e of readdirSync(root, { withFileTypes: true })) {
+        if (e.isDirectory() && /^\d{4}-\d{2}$/.test(e.name)) {
+          const monthDir = join(root, e.name)
           const files = readdirSync(monthDir).filter((f) => f.includes(noteId) && f.endsWith('.md'))
           if (files.length > 0) return join(monthDir, files[0])
         }
       }
     } catch {}
-    // Fallback: old flat notes/ folder
     try {
       const oldDir = join(root, 'notes')
       if (existsSync(oldDir)) {
@@ -503,71 +709,59 @@ function setupIPC(): void {
     return null
   }
 
-  // Run migration at startup
-  migrateNotesStructure()
-
-  ipcMain.handle('notes:list', (_e, _wsId: string) => {
-    const p = join(getNotesRoot(), 'index.json')
+  ipcMain.handle('notes:list', (_e, wsId: string) => {
+    const p = join(getWsNotesRoot(wsId), 'index.json')
     return safeReadJSON(p, { workspace: null, notes: [] })
   })
 
-  ipcMain.handle('notes:save', (_e, _wsId: string, note: Record<string, unknown>) => {
+  ipcMain.handle('notes:save', (_e, wsId: string, note: Record<string, unknown>) => {
     try {
-      const root = getNotesRoot()
+      const root = getWsNotesRoot(wsId)
       const idxPath = join(root, 'index.json')
       const index = safeReadJSON<{ workspace: unknown; notes: Record<string, unknown>[] }>(
-        idxPath,
-        { workspace: { id: 'default' }, notes: [] }
+        idxPath, { workspace: { id: wsId }, notes: [] }
       )
-
-      const id =
-        (note.id as string) ||
-        Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+      const id = (note.id as string) || Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
       const now = new Date().toISOString()
       const content = (note.content as string) || ''
       const ei = index.notes.findIndex((n) => n.id === id)
+      const rawTitle = (note.title as string) || content.split('\n')[0]?.substring(0, 50) || '无标题'
 
-      const meta = {
-        id,
-        title:
-          (note.title as string) || content.split('\n')[0]?.substring(0, 50) || '无标题',
-        preview: content.substring(0, 100),
-        tags: (note.tags as string[]) || [],
-        createdAt: ei >= 0 ? index.notes[ei].createdAt : now,
-        updatedAt: now,
-        isDeleted: false
-      }
-
-      // Delete old file if updating (might be in different month folder)
+      // Delete old file if updating
       if (ei >= 0) {
-        const oldFile = findNoteFile(id)
+        const oldFile = findNoteFile(wsId, id)
         if (oldFile && existsSync(oldFile)) unlinkSync(oldFile)
       }
 
+      // Save to YYYY-MM/ folder with sanitised title
+      const dateStr = now.split('T')[0]
+      const monthStr = dateStr.substring(0, 7)
+      const monthDir = join(root, monthStr)
+      if (!existsSync(monthDir)) mkdirSync(monthDir, { recursive: true })
+      const fileName = uniqueMdName(monthDir, sanitizeTitle(rawTitle))
+      writeFileSync(join(monthDir, fileName), content, 'utf-8')
+
+      const meta = {
+        id, title: rawTitle,
+        preview: content.replace(/!\[[^\]]*\]\([^)]+\)\n?/g, '').substring(0, 100),
+        tags: (note.tags as string[]) || [],
+        createdAt: ei >= 0 ? index.notes[ei].createdAt : now,
+        updatedAt: now, isDeleted: false, fileName,
+      }
       if (ei >= 0) index.notes[ei] = meta
       else index.notes.unshift(meta)
       safeWriteJSON(idxPath, index)
-
-      // Save to YYYY-MM/ folder
-      const dateStr = now.split('T')[0]            // 2026-02-09
-      const monthStr = dateStr.substring(0, 7)      // 2026-02
-      const monthDir = join(root, monthStr)
-      if (!existsSync(monthDir)) mkdirSync(monthDir, { recursive: true })
-      writeFileSync(join(monthDir, `${dateStr}_${id}.md`), content, 'utf-8')
-
       return { success: true, id }
     } catch (err) {
       return { success: false, error: String(err) }
     }
   })
 
-  ipcMain.handle('notes:saveAttachment', (_e, _wsId: string, fileName: string, base64Data: string) => {
+  ipcMain.handle('notes:saveAttachment', (_e, wsId: string, fileName: string, base64Data: string) => {
     try {
-      const attachDir = getAttachmentsDir()
-      if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true })
+      const attachDir = getWsAttachDir(wsId)
       const filePath = join(attachDir, fileName)
-      const buffer = Buffer.from(base64Data, 'base64')
-      writeFileSync(filePath, buffer)
+      writeFileSync(filePath, Buffer.from(base64Data, 'base64'))
       return { success: true, path: filePath }
     } catch (err) {
       return { success: false, error: String(err) }
@@ -590,15 +784,14 @@ function setupIPC(): void {
     }
   })
 
-  ipcMain.handle('notes:pasteImage', (_e, _wsId: string) => {
+  ipcMain.handle('notes:pasteImage', (_e, wsId: string) => {
     try {
       const img = clipboard.readImage()
       if (img.isEmpty()) return { success: false, error: 'clipboard has no image' }
       const pngBuffer = img.toPNG()
       if (!pngBuffer || pngBuffer.length === 0) return { success: false, error: 'image conversion failed' }
 
-      const attachDir = getAttachmentsDir()
-      if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true })
+      const attachDir = getWsAttachDir(wsId)
       const fileName = `img_${Date.now()}.png`
       writeFileSync(join(attachDir, fileName), pngBuffer)
 
@@ -608,17 +801,18 @@ function setupIPC(): void {
     }
   })
 
-  ipcMain.handle('notes:load', (_e, _wsId: string, noteId: string) => {
+  ipcMain.handle('notes:load', (_e, wsId: string, noteId: string) => {
     try {
-      const file = findNoteFile(noteId)
+      const file = findNoteFile(wsId, noteId)
       if (file) return readFileSync(file, 'utf-8')
     } catch {}
     return ''
   })
 
-  ipcMain.handle('notes:delete', (_e, _wsId: string, noteId: string) => {
+  ipcMain.handle('notes:delete', (_e, wsId: string, noteId: string) => {
     try {
-      const idxPath = join(getNotesRoot(), 'index.json')
+      const root = getWsNotesRoot(wsId)
+      const idxPath = join(root, 'index.json')
       const index = safeReadJSON<{ notes: Record<string, unknown>[] }>(idxPath, { notes: [] })
       const ni = index.notes.findIndex((n) => n.id === noteId)
       if (ni >= 0) {
@@ -626,8 +820,7 @@ function setupIPC(): void {
         index.notes[ni].deletedAt = new Date().toISOString()
         safeWriteJSON(idxPath, index)
       }
-      // Also remove the .md file
-      const file = findNoteFile(noteId)
+      const file = findNoteFile(wsId, noteId)
       if (file && existsSync(file)) unlinkSync(file)
       return { success: true }
     } catch (err) {
@@ -637,9 +830,9 @@ function setupIPC(): void {
 
   // ---- Notes Export ----
 
-  // Collect all .md files in date range
-  function collectNotesInRange(startDate: string, endDate: string): { date: string; content: string; filePath: string }[] {
-    const root = getNotesRoot()
+  // Collect notes by updatedAt from index.json
+  function collectNotesInRange(wsId: string, startDate: string, endDate: string): { date: string; content: string; filePath: string }[] {
+    const root = getWsNotesRoot(wsId)
     const results: { date: string; content: string; filePath: string }[] = []
     try {
       const entries = readdirSync(root, { withFileTypes: true })
@@ -674,7 +867,8 @@ function setupIPC(): void {
   ipcMain.handle('notes:export', async (_e, startDate: string, endDate: string, format: 'md' | 'pdf') => {
     if (!mainWindow) return { success: false, error: 'no window' }
     try {
-      const notes = collectNotesInRange(startDate, endDate)
+      const activeWsId = readConfig().activeWorkspaceId || 'default'
+      const notes = collectNotesInRange(activeWsId, startDate, endDate)
       if (notes.length === 0) return { success: false, error: '选定日期范围内没有记录' }
 
       const defaultName = startDate === endDate
@@ -768,7 +962,7 @@ function setupIPC(): void {
     }
   })
 
-  // ---- Todos Export ----
+  // ---- Todos Export (global, not workspace-scoped) ----
   ipcMain.handle('todos:export', async (_e, startDate: string, endDate: string, format: 'md' | 'pdf') => {
     if (!mainWindow) return { success: false, error: 'no window' }
     try {
@@ -852,10 +1046,9 @@ function setupIPC(): void {
     }
   })
 
-  // ---- Todos ----
+  // ---- Todos (global, not workspace-scoped) ----
   ipcMain.handle('todos:load', (_e, date: string) => {
     const todosDir = getTodosDir()
-    if (!existsSync(todosDir)) mkdirSync(todosDir, { recursive: true })
     const p = join(todosDir, `${date}.json`)
     return safeReadJSON(p, { date, archived: false, items: [] })
   })
@@ -863,7 +1056,6 @@ function setupIPC(): void {
   ipcMain.handle('todos:save', (_e, date: string, data: unknown) => {
     try {
       const todosDir = getTodosDir()
-      if (!existsSync(todosDir)) mkdirSync(todosDir, { recursive: true })
       const p = join(todosDir, `${date}.json`)
       safeWriteJSON(p, data)
       return { success: true }
@@ -944,184 +1136,189 @@ function setupIPC(): void {
     }
   })
 
-  // ---- Storage Path Management ----
+  // ---- Storage / Workspace management ----
 
-  // Notes storage
-  ipcMain.handle('storage:getNotesPath', () => getNotesRoot())
-  ipcMain.handle('storage:getDefaultNotesPath', () => getDefaultNotesRoot())
   ipcMain.handle('storage:selectDir', async (_e, title: string) => {
     if (!mainWindow) return { success: false, error: 'no window' }
     const result = await dialog.showOpenDialog(mainWindow, {
-      title,
-      properties: ['openDirectory', 'createDirectory'],
-      buttonLabel: '选择此文件夹'
+      title, properties: ['openDirectory', 'createDirectory'], buttonLabel: '选择此文件夹'
     })
     if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true }
     return { success: true, path: result.filePaths[0] }
   })
 
-  ipcMain.handle('storage:setNotesPath', async (_e, newPath: string, migrate: boolean) => {
+  // --- Workspace CRUD ---
+  ipcMain.handle('workspace:list', () => {
+    return readConfig().workspaces || []
+  })
+
+  ipcMain.handle('workspace:getActive', () => {
+    return readConfig().activeWorkspaceId || 'default'
+  })
+
+  ipcMain.handle('workspace:setActive', (_e, wsId: string) => {
     try {
-      const oldRoot = getNotesRoot()
-      if (!existsSync(newPath)) mkdirSync(newPath, { recursive: true })
-      // Ensure subdirs
-      if (!existsSync(join(newPath, 'notes'))) mkdirSync(join(newPath, 'notes'), { recursive: true })
-      if (!existsSync(join(newPath, 'attachments'))) mkdirSync(join(newPath, 'attachments'), { recursive: true })
-
-      let migratedCount = 0
-      if (migrate && oldRoot !== newPath && existsSync(oldRoot)) {
-        // Migrate index.json
-        const oldIdx = join(oldRoot, 'index.json')
-        if (existsSync(oldIdx)) { copyFileSync(oldIdx, join(newPath, 'index.json')); migratedCount++ }
-        // Migrate notes/
-        const oldNotes = join(oldRoot, 'notes')
-        if (existsSync(oldNotes)) {
-          for (const f of readdirSync(oldNotes)) {
-            try { copyFileSync(join(oldNotes, f), join(newPath, 'notes', f)); unlinkSync(join(oldNotes, f)); migratedCount++ } catch {}
-          }
-        }
-        // Migrate attachments/
-        const oldAtt = getAttachmentsDir()
-        if (existsSync(oldAtt)) {
-          for (const f of readdirSync(oldAtt)) {
-            try { copyFileSync(join(oldAtt, f), join(newPath, 'attachments', f)); unlinkSync(join(oldAtt, f)); migratedCount++ } catch {}
-          }
-        }
-      }
-
-      const cfgP = join(getDataDir(), 'config.json')
-      const cfg = safeReadJSON<Record<string, unknown>>(cfgP, {})
-      cfg.notesRootPath = newPath
-      delete cfg.attachmentsPath // consolidated into notes root
-      safeWriteJSON(cfgP, cfg)
-      return { success: true, migratedCount }
+      const cfg = readConfig()
+      cfg.activeWorkspaceId = wsId
+      writeConfig(cfg)
+      return { success: true }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
-  ipcMain.handle('storage:resetNotesPath', async (_e, migrate: boolean) => {
+  ipcMain.handle('workspace:create', (_e, name: string, color: string) => {
     try {
-      const oldRoot = getNotesRoot()
-      const defRoot = getDefaultNotesRoot()
-      if (!existsSync(defRoot)) mkdirSync(defRoot, { recursive: true })
-      if (!existsSync(join(defRoot, 'notes'))) mkdirSync(join(defRoot, 'notes'), { recursive: true })
-      if (!existsSync(join(defRoot, 'attachments'))) mkdirSync(join(defRoot, 'attachments'), { recursive: true })
+      const cfg = readConfig()
+      const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 4)
+      const folderName = uniqueWsFolder(getWorkspacesRoot(), sanitizeWsFolder(name))
+      const ws: WorkspaceDisk = { id, name, color, folderName }
+      cfg.workspaces.push(ws)
+      writeConfig(cfg)
+      // Create folder structure: wsDir/Notes/ + wsDir/Todos/
+      ensureWsStructure(id)
+      return { success: true, id }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
 
-      let migratedCount = 0
-      if (migrate && oldRoot !== defRoot && existsSync(oldRoot)) {
-        const oldIdx = join(oldRoot, 'index.json')
-        if (existsSync(oldIdx)) { copyFileSync(oldIdx, join(defRoot, 'index.json')); migratedCount++ }
-        for (const sub of ['notes', 'attachments']) {
-          const oldSub = join(oldRoot, sub)
-          if (existsSync(oldSub)) {
-            for (const f of readdirSync(oldSub)) {
-              try { copyFileSync(join(oldSub, f), join(defRoot, sub, f)); unlinkSync(join(oldSub, f)); migratedCount++ } catch {}
+  ipcMain.handle('workspace:rename', (_e, wsId: string, name: string, color?: string) => {
+    try {
+      const cfg = readConfig()
+      const ws = cfg.workspaces.find((w) => w.id === wsId)
+      if (!ws) return { success: false, error: '工作区不存在' }
+      const oldFolderName = ws.folderName
+      ws.name = name
+      if (color) ws.color = color
+      // Rename physical folder if name changed
+      const root = getWorkspacesRoot()
+      const newFolderBase = sanitizeWsFolder(name)
+      if (newFolderBase !== oldFolderName) {
+        const newFolder = uniqueWsFolder(root, newFolderBase)
+        const oldPath = join(root, oldFolderName)
+        const newPath = join(root, newFolder)
+        if (existsSync(oldPath)) {
+          try { renameSync(oldPath, newPath) } catch {}
+        }
+        ws.folderName = newFolder
+      }
+      writeConfig(cfg)
+      // Update index.json inside Notes/
+      const idxPath = join(getWsNotesRoot(wsId), 'index.json')
+      const idx = safeReadJSON<Record<string, unknown>>(idxPath, {})
+      const wsObj = (idx.workspace || {}) as Record<string, unknown>
+      wsObj.name = name
+      if (color) wsObj.color = color
+      idx.workspace = wsObj
+      safeWriteJSON(idxPath, idx)
+      return { success: true }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  ipcMain.handle('workspace:delete', (_e, wsId: string) => {
+    try {
+      if (wsId === 'default') return { success: false, error: '不能删除默认工作区' }
+      const cfg = readConfig()
+      const ws = cfg.workspaces.find((w) => w.id === wsId)
+      cfg.workspaces = cfg.workspaces.filter((w) => w.id !== wsId)
+      if (cfg.activeWorkspaceId === wsId) cfg.activeWorkspaceId = 'default'
+      writeConfig(cfg)
+      // Backup workspace folder to temp
+      if (ws) {
+        const wsDir = join(getWorkspacesRoot(), ws.folderName)
+        if (existsSync(wsDir)) {
+          const backupDir = join(tmpdir(), `quickstart-ws-${ws.folderName}-${Date.now()}`)
+          mkdirSync(backupDir, { recursive: true })
+          try {
+            for (const f of readdirSync(wsDir)) {
+              copyFileSync(join(wsDir, f), join(backupDir, f))
             }
-          }
+          } catch {}
         }
       }
-
-      const cfgP = join(getDataDir(), 'config.json')
-      const cfg = safeReadJSON<Record<string, unknown>>(cfgP, {})
-      delete cfg.notesRootPath
-      delete cfg.attachmentsPath
-      safeWriteJSON(cfgP, cfg)
-      return { success: true, migratedCount }
+      return { success: true }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
-  // Todos storage
-  ipcMain.handle('storage:getTodosPath', () => getTodosDir())
-  ipcMain.handle('storage:getDefaultTodosPath', () => getDefaultTodosDir())
+  // --- Global root path management ---
+  ipcMain.handle('storage:getRootPath', () => {
+    return getWorkspacesRoot()
+  })
 
-  ipcMain.handle('storage:setTodosPath', async (_e, newPath: string, migrate: boolean) => {
+  ipcMain.handle('storage:setRootPath', async (_e, newPath: string | null) => {
     try {
-      const oldDir = getTodosDir()
-      if (!existsSync(newPath)) mkdirSync(newPath, { recursive: true })
-
-      let migratedCount = 0
-      if (migrate && oldDir !== newPath && existsSync(oldDir)) {
-        for (const f of readdirSync(oldDir).filter((f) => f.endsWith('.json'))) {
-          try { copyFileSync(join(oldDir, f), join(newPath, f)); unlinkSync(join(oldDir, f)); migratedCount++ } catch {}
-        }
+      const cfg = readConfig()
+      const oldRoot = getWorkspacesRoot()
+      if (newPath) {
+        cfg.rootPath = newPath
+      } else {
+        delete cfg.rootPath // reset to default
       }
-
-      const cfgP = join(getDataDir(), 'config.json')
-      const cfg = safeReadJSON<Record<string, unknown>>(cfgP, {})
-      cfg.todosPath = newPath
-      safeWriteJSON(cfgP, cfg)
-      return { success: true, migratedCount }
+      writeConfig(cfg)
+      const newRoot = getWorkspacesRoot()
+      // Ensure all workspace folders exist in new root
+      for (const ws of cfg.workspaces) {
+        const dir = join(newRoot, ws.folderName)
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        ensureWsStructure(ws.id)
+      }
+      return { success: true, oldRoot, newRoot }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
-  ipcMain.handle('storage:resetTodosPath', async (_e, migrate: boolean) => {
+  // --- Global todos path management ---
+  ipcMain.handle('storage:getTodosPath', () => {
+    return getTodosDir()
+  })
+
+  ipcMain.handle('storage:setTodosPath', async (_e, newPath: string | null) => {
     try {
+      const cfg = readConfig() as Record<string,unknown>
       const oldDir = getTodosDir()
-      const defDir = getDefaultTodosDir()
-      if (!existsSync(defDir)) mkdirSync(defDir, { recursive: true })
-
-      let migratedCount = 0
-      if (migrate && oldDir !== defDir && existsSync(oldDir)) {
-        for (const f of readdirSync(oldDir).filter((f) => f.endsWith('.json'))) {
-          try { copyFileSync(join(oldDir, f), join(defDir, f)); unlinkSync(join(oldDir, f)); migratedCount++ } catch {}
-        }
+      if (newPath) {
+        cfg.todosPath = newPath
+      } else {
+        delete cfg.todosPath // reset to default
       }
-
-      const cfgP = join(getDataDir(), 'config.json')
-      const cfg = safeReadJSON<Record<string, unknown>>(cfgP, {})
-      delete cfg.todosPath
-      safeWriteJSON(cfgP, cfg)
-      return { success: true, migratedCount }
+      writeConfig(cfg as ConfigV3)
+      const newDir = getTodosDir()
+      if (!existsSync(newDir)) mkdirSync(newDir, { recursive: true })
+      return { success: true, oldPath: oldDir, newPath: newDir }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
-  // ---- Clear Data ----
-
+  // ---- Clear Data (workspace-scoped) ----
   ipcMain.handle('storage:clearNotes', async () => {
     try {
-      const root = getNotesRoot()
+      const wsId = readConfig().activeWorkspaceId || 'default'
+      const root = getWsNotesRoot(wsId)
       const backupDir = join(tmpdir(), `quickstart-backup-notes-${Date.now()}`)
       mkdirSync(backupDir, { recursive: true })
 
-      // Backup & clear index
       const idxPath = join(root, 'index.json')
       if (existsSync(idxPath)) {
         copyFileSync(idxPath, join(backupDir, 'index.json'))
-        safeWriteJSON(idxPath, { workspace: { id: 'default', name: '默认', color: '#6366f1', icon: 'inbox', createdAt: new Date().toISOString() }, notes: [] })
+        const cfg = readConfig()
+        const ws = cfg.workspaces.find((w) => w.id === wsId)
+        safeWriteJSON(idxPath, { workspace: { id: wsId, name: ws?.name || '默认', color: ws?.color || '#6366f1', icon: 'inbox', createdAt: new Date().toISOString() }, notes: [] })
       }
 
-      // Backup & clear notes (date-based YYYY-MM/ folders + legacy notes/ folder)
       let cleared = 0
-      const entries = readdirSync(root, { withFileTypes: true })
-      for (const entry of entries) {
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
         if (entry.isDirectory() && /^\d{4}-\d{2}$/.test(entry.name)) {
           const monthDir = join(root, entry.name)
-          const monthBackup = join(backupDir, entry.name)
-          mkdirSync(monthBackup, { recursive: true })
+          const mb = join(backupDir, entry.name)
+          mkdirSync(mb, { recursive: true })
           for (const f of readdirSync(monthDir).filter((f) => f.endsWith('.md'))) {
-            try { copyFileSync(join(monthDir, f), join(monthBackup, f)); unlinkSync(join(monthDir, f)); cleared++ } catch {}
+            try { copyFileSync(join(monthDir, f), join(mb, f)); unlinkSync(join(monthDir, f)); cleared++ } catch {}
           }
         }
       }
-      // Legacy flat notes/ folder
-      const notesDir = join(root, 'notes')
-      if (existsSync(notesDir)) {
-        const noteBackup = join(backupDir, 'notes')
-        mkdirSync(noteBackup, { recursive: true })
-        for (const f of readdirSync(notesDir)) {
-          try { copyFileSync(join(notesDir, f), join(noteBackup, f)); unlinkSync(join(notesDir, f)); cleared++ } catch {}
-        }
-      }
-
-      // Backup & clear attachments/
-      const attDir = getAttachmentsDir()
+      const attDir = getWsAttachDir(wsId)
       if (existsSync(attDir)) {
-        const attBackup = join(backupDir, 'attachments')
-        mkdirSync(attBackup, { recursive: true })
+        const ab = join(backupDir, 'attachments')
+        mkdirSync(ab, { recursive: true })
         for (const f of readdirSync(attDir)) {
-          try { copyFileSync(join(attDir, f), join(attBackup, f)); unlinkSync(join(attDir, f)); cleared++ } catch {}
+          try { copyFileSync(join(attDir, f), join(ab, f)); unlinkSync(join(attDir, f)); cleared++ } catch {}
         }
       }
-
       return { success: true, cleared, backupDir }
     } catch (err) { return { success: false, error: String(err) } }
   })
@@ -1135,79 +1332,16 @@ function setupIPC(): void {
       let cleared = 0
       if (existsSync(todosDir)) {
         for (const f of readdirSync(todosDir).filter((f) => f.endsWith('.json'))) {
-          try {
-            copyFileSync(join(todosDir, f), join(backupDir, f))
-            unlinkSync(join(todosDir, f))
-            cleared++
-          } catch {}
+          try { copyFileSync(join(todosDir, f), join(backupDir, f)); unlinkSync(join(todosDir, f)); cleared++ } catch {}
         }
       }
-
       return { success: true, cleared, backupDir }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
-  // Legacy compat
-  /** Get the current effective attachments path */
-  ipcMain.handle('attachments:getPath', () => {
-    return getAttachmentsDir()
-  })
-
-  /** Get the default attachments path (for display) */
-  ipcMain.handle('attachments:getDefaultPath', () => {
-    return getDefaultAttachDir()
-  })
-
-  /** Open a native folder picker dialog */
-  ipcMain.handle('attachments:selectDir', async () => {
-    if (!mainWindow) return { success: false, error: 'no window' }
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择图片存储目录',
-      properties: ['openDirectory', 'createDirectory'],
-      buttonLabel: '选择此文件夹'
-    })
-    if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, canceled: true }
-    }
-    return { success: true, path: result.filePaths[0] }
-  })
-
-  /** Set new attachments path, optionally migrate existing files */
-  ipcMain.handle('attachments:setPath', async (_e, newPath: string, migrate: boolean) => {
-    try {
-      const oldDir = getAttachmentsDir()
-
-      // Ensure new directory exists
-      if (!existsSync(newPath)) mkdirSync(newPath, { recursive: true })
-
-      // Migrate files if requested
-      let migratedCount = 0
-      if (migrate && oldDir !== newPath && existsSync(oldDir)) {
-        const files = readdirSync(oldDir)
-        for (const file of files) {
-          const src = join(oldDir, file)
-          const dest = join(newPath, file)
-          try {
-            copyFileSync(src, dest)
-            unlinkSync(src)
-            migratedCount++
-          } catch (err) {
-            console.error(`Failed to migrate ${file}:`, err)
-          }
-        }
-      }
-
-      // Persist in config
-      const configPath = join(getDataDir(), 'config.json')
-      const config = safeReadJSON<Record<string, unknown>>(configPath, {})
-      config.attachmentsPath = newPath
-      safeWriteJSON(configPath, config)
-
-      return { success: true, migratedCount }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
-  })
+  // Legacy compat – attachments path proxies
+  ipcMain.handle('attachments:getPath', () => getAttachmentsDir())
+  ipcMain.handle('attachments:getDefaultPath', () => getAttachmentsDir())
 
   // ---- AI (multi-node) ----
 
@@ -1548,7 +1682,8 @@ function setupIPC(): void {
 
       // Image: return as quickstart:// URL
       if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) {
-        const attachDir = getAttachmentsDir()
+        const wsId = readConfig().activeWorkspaceId || 'default'
+        const attachDir = getWsAttachDir(wsId)
         const destName = `ai_${Date.now()}_${name}`
         const dest = join(attachDir, destName)
         copyFileSync(filePath, dest)
@@ -1574,40 +1709,8 @@ function setupIPC(): void {
     } catch (err) { return { success: false, error: String(err) } }
   })
 
-  /** Reset to default path, optionally migrate files back */
-  ipcMain.handle('attachments:resetPath', async (_e, migrate: boolean) => {
-    try {
-      const configPath = join(getDataDir(), 'config.json')
-      const config = safeReadJSON<Record<string, unknown>>(configPath, {})
-      const oldDir = config.attachmentsPath as string | undefined
-      const defaultDir = getDefaultAttachDir()
-
-      if (!existsSync(defaultDir)) mkdirSync(defaultDir, { recursive: true })
-
-      let migratedCount = 0
-      if (migrate && oldDir && oldDir !== defaultDir && existsSync(oldDir)) {
-        const files = readdirSync(oldDir)
-        for (const file of files) {
-          const src = join(oldDir, file)
-          const dest = join(defaultDir, file)
-          try {
-            copyFileSync(src, dest)
-            unlinkSync(src)
-            migratedCount++
-          } catch (err) {
-            console.error(`Failed to migrate back ${file}:`, err)
-          }
-        }
-      }
-
-      delete config.attachmentsPath
-      safeWriteJSON(configPath, config)
-
-      return { success: true, migratedCount }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
-  })
+  // Legacy compat - no-op for old resetPath
+  ipcMain.handle('attachments:resetPath', async () => ({ success: true, migratedCount: 0 }))
 }
 
 // ============================================================
@@ -1623,12 +1726,20 @@ app.whenReady().then(async () => {
 
     let filePath: string
     if (host === 'media') {
-      // Use the dynamic attachments directory (respects custom path)
-      filePath = join(getAttachmentsDir(), fileName)
-
-      // Fallback: if not found in custom dir, check default dir too
+      // Search active workspace first, then all workspaces
+      const cfg = readConfig()
+      filePath = join(getWsAttachDir(cfg.activeWorkspaceId || 'default'), fileName)
       if (!existsSync(filePath)) {
-        const fallback = join(getDefaultAttachDir(), fileName)
+        // Search all workspaces
+        for (const ws of cfg.workspaces) {
+          const alt = join(getWsAttachDir(ws.id), fileName)
+          if (existsSync(alt)) { filePath = alt; break }
+        }
+      }
+      // Final fallback: legacy default location
+      if (!existsSync(filePath)) {
+        const legacyDir = join(getDataDir(), 'workspaces', 'default', 'attachments')
+        const fallback = join(legacyDir, fileName)
         if (existsSync(fallback)) filePath = fallback
       }
     } else {

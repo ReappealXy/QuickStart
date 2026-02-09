@@ -1,8 +1,14 @@
 import { create } from 'zustand'
+import { useSettingsStore } from './settingsStore'
+
+function getWsId(): string {
+  return useSettingsStore.getState().activeWorkspaceId || 'default'
+}
 
 interface NoteState {
   notes: NoteMeta[]
   draft: string
+  title: string
   editingId: string | null
   loading: boolean
   loadNotes: () => Promise<void>
@@ -12,6 +18,7 @@ interface NoteState {
   softDeleteNote: (id: string) => Promise<void>
   loadNoteContent: (id: string) => Promise<string>
   setDraft: (content: string) => void
+  setTitle: (title: string) => void
   setEditingId: (id: string | null) => void
   clearEditor: () => void
 }
@@ -19,13 +26,14 @@ interface NoteState {
 export const useNoteStore = create<NoteState>((set, get) => ({
   notes: [],
   draft: '',
+  title: '',
   editingId: null,
   loading: false,
 
   loadNotes: async () => {
     set({ loading: true })
     try {
-      const data = await window.api.notes.list('default')
+      const data = await window.api.notes.list(getWsId())
       const visibleNotes = (data.notes || []).filter((n: NoteMeta) => !n.isDeleted)
       set({ notes: visibleNotes })
     } catch (err) {
@@ -36,36 +44,35 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   saveNote: async (content: string, title?: string) => {
-    if (!content.trim()) return
+    const noteTitle = title ?? get().title
+    if (!content.trim() && !noteTitle.trim()) return
     const { editingId } = get()
-    // If editingId exists, pass it to overwrite the existing note
-    const noteObj: Record<string, unknown> = { content, title }
+    const noteObj: Record<string, unknown> = { content, title: noteTitle }
     if (editingId) noteObj.id = editingId
-    await window.api.notes.save('default', noteObj)
-    set({ draft: '', editingId: null })
+    await window.api.notes.save(getWsId(), noteObj)
+    set({ draft: '', title: '', editingId: null })
     await get().loadNotes()
   },
 
   deleteNote: async (id: string) => {
-    await window.api.notes.delete('default', id)
-    // If we were editing this note, clear editor
+    await window.api.notes.delete(getWsId(), id)
     if (get().editingId === id) {
-      set({ draft: '', editingId: null })
+      set({ draft: '', title: '', editingId: null })
     }
     await get().loadNotes()
   },
 
   softDeleteNote: async (id: string) => {
-    await window.api.notes.delete('default', id)
+    await window.api.notes.delete(getWsId(), id)
     if (get().editingId === id) {
-      set({ draft: '', editingId: null })
+      set({ draft: '', title: '', editingId: null })
     }
     await get().loadNotes()
   },
 
   loadNoteContent: async (id: string) => {
     try {
-      const content = await window.api.notes.load('default', id)
+      const content = await window.api.notes.load(getWsId(), id)
       return content || ''
     } catch {
       return ''
@@ -73,6 +80,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   setDraft: (content: string) => set({ draft: content }),
+  setTitle: (title: string) => set({ title }),
   setEditingId: (id: string | null) => set({ editingId: id }),
-  clearEditor: () => set({ draft: '', editingId: null }),
+  clearEditor: () => set({ draft: '', title: '', editingId: null }),
 }))

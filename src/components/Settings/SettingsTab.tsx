@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useSettingsStore } from '../../stores/settingsStore'
 import {
   Keyboard, Info, Check,
   FolderOpen, RotateCcw, Loader2, FolderSync, Sparkles,
   Eye, EyeOff, Save, ChevronDown, Plus, GripVertical,
-  Pencil, Trash2, Power, X, RefreshCw, Settings2, FileText, ListChecks, AlertTriangle,
-  Download, Calendar, FileDown
+  Pencil, Trash2, Power, X, RefreshCw, Settings2, AlertTriangle,
+  Download, Calendar, FileDown, FileText, ListChecks
 } from 'lucide-react'
 
 /* ─── Danger Clear Button with 10s countdown ─── */
@@ -1034,24 +1035,22 @@ function GeneralSection({ isDark, glassCard, setToast }: {
 export default function SettingsTab() {
   const isDark = false // Fixed light mode
 
-  // ── Storage paths state ──
-  const [notesPath, setNotesPath] = useState('')
-  const [notesDefault, setNotesDefault] = useState('')
+  // ── Workspace state ──
+  const workspaces = useSettingsStore((s) => s.workspaces)
+
+  // ── Storage paths ──
+  const [rootPath, setRootPath] = useState('')
   const [todosPath, setTodosPath] = useState('')
-  const [todosDefault, setTodosDefault] = useState('')
   const [migrating, setMigrating] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  const [confirmMigrate, setConfirmMigrate] = useState<{ target: 'notes' | 'todos'; type: 'change' | 'reset'; newPath?: string } | null>(null)
+  const [confirmRootChange, setConfirmRootChange] = useState<{ newPath: string } | null>(null)
+  const [confirmTodosChange, setConfirmTodosChange] = useState<{ newPath: string } | null>(null)
 
   const loadPaths = useCallback(async () => {
-    const [np, nd, tp, td] = await Promise.all([
-      window.api.storage.getNotesPath(),
-      window.api.storage.getDefaultNotesPath(),
-      window.api.storage.getTodosPath(),
-      window.api.storage.getDefaultTodosPath(),
-    ])
-    setNotesPath(np); setNotesDefault(nd)
-    setTodosPath(tp); setTodosDefault(td)
+    const rp = await window.api.storage.getRootPath()
+    const tp = await window.api.storage.getTodosPath()
+    setRootPath(rp)
+    setTodosPath(tp)
   }, [])
 
   useEffect(() => { loadPaths() }, [loadPaths])
@@ -1061,57 +1060,81 @@ export default function SettingsTab() {
     return () => clearTimeout(t)
   }, [toast])
 
-  const handleSelectNotesDir = async () => {
-    const result = await window.api.storage.selectDir('选择记录存储目录')
+  // --- Notes root dir ---
+  const handleSelectRootDir = async () => {
+    const result = await window.api.storage.selectDir('选择记录存储根目录')
     if (!result.success || !result.path) return
-    setConfirmMigrate({ target: 'notes', type: 'change', newPath: result.path })
-  }
-  const handleSelectTodosDir = async () => {
-    const result = await window.api.storage.selectDir('选择清单存储目录')
-    if (!result.success || !result.path) return
-    setConfirmMigrate({ target: 'todos', type: 'change', newPath: result.path })
+    setConfirmRootChange({ newPath: result.path })
   }
 
-  const handleConfirmChange = async (migrate: boolean) => {
-    if (!confirmMigrate?.newPath) return
-    const { target, newPath } = confirmMigrate
-    setMigrating(true); setConfirmMigrate(null)
+  const handleConfirmRootChange = async () => {
+    if (!confirmRootChange?.newPath) return
+    setMigrating(true); setConfirmRootChange(null)
     try {
-      const res = target === 'notes'
-        ? await window.api.storage.setNotesPath(newPath, migrate)
-        : await window.api.storage.setTodosPath(newPath, migrate)
-      if (res.success) { await loadPaths(); setToast(migrate && res.migratedCount ? `已迁移 ${res.migratedCount} 个文件` : '存储路径已更新') }
-      else setToast('更改失败: ' + (res.error || '未知错误'))
+      const res = await window.api.storage.setRootPath(confirmRootChange.newPath)
+      if (res.success) {
+        await loadPaths()
+        setToast('记录存储目录已更新')
+      } else {
+        setToast('更改失败: ' + (res.error || '未知错误'))
+      }
     } finally { setMigrating(false) }
   }
 
-  const handleReset = (target: 'notes' | 'todos') => {
-    setConfirmMigrate({ target, type: 'reset' })
+  const handleResetRoot = async () => {
+    setMigrating(true)
+    try {
+      const res = await window.api.storage.setRootPath(null)
+      if (res.success) {
+        await loadPaths()
+        setToast('已恢复默认记录存储目录')
+      } else {
+        setToast('重置失败: ' + (res.error || '未知错误'))
+      }
+    } finally { setMigrating(false) }
   }
 
-  const handleConfirmReset = async (migrate: boolean) => {
-    if (!confirmMigrate) return
-    const { target } = confirmMigrate
-    setMigrating(true); setConfirmMigrate(null)
+  // --- Todos path ---
+  const handleSelectTodosDir = async () => {
+    const result = await window.api.storage.selectDir('选择清单存储目录')
+    if (!result.success || !result.path) return
+    setConfirmTodosChange({ newPath: result.path })
+  }
+
+  const handleConfirmTodosChange = async () => {
+    if (!confirmTodosChange?.newPath) return
+    setMigrating(true); setConfirmTodosChange(null)
     try {
-      const res = target === 'notes'
-        ? await window.api.storage.resetNotesPath(migrate)
-        : await window.api.storage.resetTodosPath(migrate)
-      if (res.success) { await loadPaths(); setToast(migrate && res.migratedCount ? `已迁回 ${res.migratedCount} 个文件` : '已恢复默认路径') }
-      else setToast('重置失败: ' + (res.error || '未知错误'))
+      const res = await window.api.storage.setTodosPath(confirmTodosChange.newPath)
+      if (res.success) {
+        await loadPaths()
+        setToast('清单存储目录已更新')
+      } else {
+        setToast('更改失败: ' + (res.error || '未知错误'))
+      }
+    } finally { setMigrating(false) }
+  }
+
+  const handleResetTodos = async () => {
+    setMigrating(true)
+    try {
+      const res = await window.api.storage.setTodosPath(null)
+      if (res.success) {
+        await loadPaths()
+        setToast('已恢复默认清单存储目录')
+      } else {
+        setToast('重置失败: ' + (res.error || '未知错误'))
+      }
     } finally { setMigrating(false) }
   }
 
   const shortenPath = (p: string) => {
     if (!p) return '...'
-    if (p.length <= 42) return p
+    if (p.length <= 45) return p
     const parts = p.replace(/\\/g, '/').split('/')
     if (parts.length <= 3) return p
     return parts[0] + '/.../' + parts.slice(-2).join('/')
   }
-
-  const notesIsCustom = notesPath !== notesDefault && notesPath !== ''
-  const todosIsCustom = todosPath !== todosDefault && todosPath !== ''
 
   /* ── Shared styles ── */
   const glassCard = {
@@ -1133,27 +1156,44 @@ export default function SettingsTab() {
         </h3>
         <div style={glassCard}>
           <div style={{ padding: '14px 16px 12px' }}>
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1">
               <FolderOpen size={13} style={{ color: '#8b5cf6' }} className="flex-shrink-0" />
-              <span className="text-[12px] font-semibold text-zinc-700">存储目录</span>
-              {notesIsCustom && (
-                <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-px rounded-md" style={{ background: 'rgba(139,92,246,0.08)', color: '#8b5cf6' }}>
-                  自定义
-                </span>
-              )}
+              <span className="text-[12px] font-semibold text-zinc-700">工作区根目录</span>
             </div>
-            <p className="text-[9px] mb-2" style={{ color: '#a1a1aa' }}>包含 Markdown 文本与粘贴的图片附件</p>
+            <p className="text-[9px] mb-2.5" style={{ color: '#a1a1aa' }}>
+              每个工作区以名称为子文件夹，包含 Markdown 文本与图片附件
+            </p>
             <div
               className="font-mono text-[10px] break-all leading-relaxed select-all"
               style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(15,23,42,0.05)', color: '#64748b', border: '1px solid rgba(0,0,0,0.03)' }}
-              title={notesPath}
+              title={rootPath}
             >
-              {shortenPath(notesPath)}
+              {shortenPath(rootPath)}
             </div>
+            {/* Workspace list preview */}
+            {workspaces.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap mt-2.5">
+                {workspaces.map((ws) => (
+                  <div
+                    key={ws.id}
+                    className="flex items-center gap-1.5 text-[10px] font-medium"
+                    style={{
+                      padding: '3px 8px', borderRadius: '6px',
+                      background: 'rgba(139,92,246,0.05)',
+                      color: '#8b5cf6',
+                      border: '1px solid rgba(139,92,246,0.10)',
+                    }}
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ background: ws.color }} />
+                    {ws.folderName}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-2" style={{ padding: '10px 16px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+          <div className="flex items-center gap-2 flex-wrap" style={{ padding: '10px 16px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
             <button
-              onClick={handleSelectNotesDir}
+              onClick={handleSelectRootDir}
               disabled={migrating}
               className="flex items-center gap-1.5 text-[11px] font-bold transition-all"
               style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(139,92,246,0.2)', background: 'rgba(139,92,246,0.04)', color: '#8b5cf6', opacity: migrating ? 0.5 : 1 }}
@@ -1164,20 +1204,18 @@ export default function SettingsTab() {
               {migrating ? <Loader2 size={11} className="animate-spin" /> : <FolderSync size={11} />}
               更改目录
             </button>
-            {notesIsCustom && (
-              <button
-                onClick={() => handleReset('notes')}
-                disabled={migrating}
-                className="flex items-center gap-1.5 text-[11px] font-medium transition-all"
-                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.06)', color: '#a1a1aa', opacity: migrating ? 0.5 : 1 }}
-                onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
-                onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-              >
-                <RotateCcw size={10} />
-                恢复默认
-              </button>
-            )}
+            <button
+              onClick={handleResetRoot}
+              disabled={migrating}
+              className="flex items-center gap-1.5 text-[11px] font-medium transition-all"
+              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.06)', color: '#a1a1aa', opacity: migrating ? 0.5 : 1 }}
+              onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
+              onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+            >
+              <RotateCcw size={10} />
+              恢复默认
+            </button>
             <div className="flex-1" />
             <DangerClearButton
               label="清空记录"
@@ -1193,23 +1231,20 @@ export default function SettingsTab() {
       </section>
 
       {/* ━━━ Todos Storage ━━━ */}
-      <section className="animate-fadeInUp mb-5">
+      <section className="animate-fadeInUp mb-4">
         <h3 className="text-[9px] font-extrabold uppercase tracking-[0.15em] text-zinc-400/60 mb-2 px-0.5 flex items-center gap-1.5">
           <ListChecks size={9} />
           清单存储
         </h3>
         <div style={glassCard}>
           <div style={{ padding: '14px 16px 12px' }}>
-            <div className="flex items-center gap-2 mb-1.5">
-              <FolderOpen size={13} style={{ color: '#3b82f6' }} className="flex-shrink-0" />
-              <span className="text-[12px] font-semibold text-zinc-700">存储目录</span>
-              {todosIsCustom && (
-                <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-px rounded-md" style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6' }}>
-                  自定义
-                </span>
-              )}
+            <div className="flex items-center gap-2 mb-1">
+              <FolderOpen size={13} style={{ color: '#f59e0b' }} className="flex-shrink-0" />
+              <span className="text-[12px] font-semibold text-zinc-700">清单数据目录</span>
             </div>
-            <p className="text-[9px] mb-2" style={{ color: '#a1a1aa' }}>每日清单数据文件 (JSON)</p>
+            <p className="text-[9px] mb-2.5" style={{ color: '#a1a1aa' }}>
+              清单数据为全局存储，不随工作区切换
+            </p>
             <div
               className="font-mono text-[10px] break-all leading-relaxed select-all"
               style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(15,23,42,0.05)', color: '#64748b', border: '1px solid rgba(0,0,0,0.03)' }}
@@ -1218,12 +1253,12 @@ export default function SettingsTab() {
               {shortenPath(todosPath)}
             </div>
           </div>
-          <div className="flex items-center gap-2" style={{ padding: '10px 16px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+          <div className="flex items-center gap-2 flex-wrap" style={{ padding: '10px 16px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
             <button
               onClick={handleSelectTodosDir}
               disabled={migrating}
               className="flex items-center gap-1.5 text-[11px] font-bold transition-all"
-              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.2)', background: 'rgba(59,130,246,0.04)', color: '#3b82f6', opacity: migrating ? 0.5 : 1 }}
+              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.2)', background: 'rgba(245,158,11,0.04)', color: '#f59e0b', opacity: migrating ? 0.5 : 1 }}
               onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
               onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
@@ -1231,20 +1266,18 @@ export default function SettingsTab() {
               {migrating ? <Loader2 size={11} className="animate-spin" /> : <FolderSync size={11} />}
               更改目录
             </button>
-            {todosIsCustom && (
-              <button
-                onClick={() => handleReset('todos')}
-                disabled={migrating}
-                className="flex items-center gap-1.5 text-[11px] font-medium transition-all"
-                style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.06)', color: '#a1a1aa', opacity: migrating ? 0.5 : 1 }}
-                onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
-                onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-              >
-                <RotateCcw size={10} />
-                恢复默认
-              </button>
-            )}
+            <button
+              onClick={handleResetTodos}
+              disabled={migrating}
+              className="flex items-center gap-1.5 text-[11px] font-medium transition-all"
+              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.06)', color: '#a1a1aa', opacity: migrating ? 0.5 : 1 }}
+              onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
+              onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+            >
+              <RotateCcw size={10} />
+              恢复默认
+            </button>
             <div className="flex-1" />
             <DangerClearButton
               label="清空清单"
@@ -1289,7 +1322,7 @@ export default function SettingsTab() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] font-bold text-zinc-700 dark:text-zinc-200">QuickStart</p>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.1.0 · 桌面快捷效率工具</p>
+            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.5.0 · 桌面快捷效率工具</p>
             <button
               onClick={() => window.api.shell.openExternal('https://github.com/ReappealXy')}
               className="inline-flex items-center gap-1 mt-1 text-[9px] font-medium transition-all cursor-pointer"
@@ -1304,12 +1337,12 @@ export default function SettingsTab() {
         </div>
       </section>
 
-      {/* ====== Migration Confirm Dialog ====== */}
-      {confirmMigrate && (
+      {/* ====== Confirm Dir Change Dialog ====== */}
+      {(confirmRootChange || confirmTodosChange) && (
         <div
           className="fixed inset-0 z-[999] flex items-center justify-center animate-fadeIn"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setConfirmMigrate(null)}
+          onClick={() => { setConfirmRootChange(null); setConfirmTodosChange(null) }}
         >
           <div
             className="animate-scaleIn"
@@ -1317,72 +1350,62 @@ export default function SettingsTab() {
               width: '300px',
               borderRadius: '16px',
               padding: '22px',
-              background: isDark ? 'rgba(39,39,42,0.95)' : 'rgba(255,255,255,0.95)',
+              background: 'rgba(255,255,255,0.95)',
               backdropFilter: 'blur(20px)',
               boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-              border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.04)',
+              border: '1px solid rgba(0,0,0,0.04)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
-              <FolderSync size={20} style={{ color: '#8b5cf6' }} />
+              <FolderSync size={20} style={{ color: confirmRootChange ? '#8b5cf6' : '#f59e0b' }} />
               <div>
-                <p className="text-[13px] font-bold text-zinc-800 dark:text-zinc-100">
-                  {confirmMigrate.type === 'change' ? '更改存储目录' : '恢复默认目录'}
+                <p className="text-[13px] font-bold text-zinc-800">
+                  {confirmRootChange ? '更改记录存储目录' : '更改清单存储目录'}
                 </p>
-                <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                  是否将已有数据迁移到新位置？
+                <p className="text-[10px] text-zinc-400 mt-0.5">
+                  {confirmRootChange
+                    ? '工作区子文件夹将在新目录下自动创建'
+                    : '清单数据将读写到新目录'}
                 </p>
               </div>
             </div>
 
-            {confirmMigrate.type === 'change' && confirmMigrate.newPath && (
-              <div
-                className="mb-4 font-mono text-[9px] break-all leading-relaxed"
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: '8px',
-                  background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(15,23,42,0.05)',
-                  color: isDark ? '#a1a1aa' : '#64748b',
-                  border: isDark ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.03)',
-                }}
-              >
-                {confirmMigrate.newPath}
-              </div>
-            )}
+            <div
+              className="mb-4 font-mono text-[9px] break-all leading-relaxed"
+              style={{
+                padding: '8px 10px',
+                borderRadius: '8px',
+                background: 'rgba(15,23,42,0.05)',
+                color: '#64748b',
+                border: '1px solid rgba(0,0,0,0.03)',
+              }}
+            >
+              {confirmRootChange?.newPath || confirmTodosChange?.newPath}
+            </div>
 
             <div className="flex flex-col gap-2">
               <button
-                onClick={() => confirmMigrate.type === 'change' ? handleConfirmChange(true) : handleConfirmReset(true)}
+                onClick={confirmRootChange ? handleConfirmRootChange : handleConfirmTodosChange}
                 className="w-full text-[12px] font-bold rounded-xl text-white transition-all"
                 style={{
                   padding: '10px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  boxShadow: '0 3px 12px -2px rgba(102,126,234,0.4)',
+                  background: confirmRootChange
+                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                    : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  boxShadow: confirmRootChange
+                    ? '0 3px 12px -2px rgba(102,126,234,0.4)'
+                    : '0 3px 12px -2px rgba(245,158,11,0.4)',
                 }}
                 onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.98)' }}
                 onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
               >
-                迁移文件并更改
+                确认更改
               </button>
               <button
-                onClick={() => confirmMigrate.type === 'change' ? handleConfirmChange(false) : handleConfirmReset(false)}
-                className="w-full text-[12px] font-semibold rounded-xl transition-all"
-                style={{
-                  padding: '10px',
-                  background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                  color: isDark ? '#d4d4d8' : '#52525b',
-                }}
-                onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.98)' }}
-                onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-              >
-                仅更改路径
-              </button>
-              <button
-                onClick={() => setConfirmMigrate(null)}
-                className="w-full py-1.5 text-[11px] text-zinc-400 font-medium transition-all hover:text-zinc-600 dark:hover:text-zinc-300"
+                onClick={() => { setConfirmRootChange(null); setConfirmTodosChange(null) }}
+                className="w-full py-1.5 text-[11px] text-zinc-400 font-medium transition-all hover:text-zinc-600"
               >
                 取消
               </button>

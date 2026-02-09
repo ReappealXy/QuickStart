@@ -1,5 +1,12 @@
 /// <reference types="vite/client" />
 
+interface Workspace {
+  id: string
+  name: string
+  color: string
+  folderName: string
+}
+
 interface Window {
   api: {
     notes: {
@@ -19,6 +26,14 @@ interface Window {
       monthSummary(yearMonth: string): Promise<Record<string, { total: number; done: number }>>
       export(startDate: string, endDate: string, format: 'md' | 'pdf'): Promise<{ success: boolean; filePath?: string; count?: number; canceled?: boolean; error?: string }>
     }
+    workspace: {
+      list(): Promise<Workspace[]>
+      getActive(): Promise<string>
+      setActive(wsId: string): Promise<{ success: boolean; error?: string }>
+      create(name: string, color: string): Promise<{ success: boolean; id?: string; error?: string }>
+      rename(wsId: string, name: string, color?: string): Promise<{ success: boolean; error?: string }>
+      delete(wsId: string): Promise<{ success: boolean; error?: string }>
+    }
     config: {
       get(): Promise<Record<string, unknown>>
       set(config: Record<string, unknown>): Promise<{ success: boolean }>
@@ -34,14 +49,10 @@ interface Window {
     }
     storage: {
       selectDir(title: string): Promise<{ success: boolean; path?: string; canceled?: boolean }>
-      getNotesPath(): Promise<string>
-      getDefaultNotesPath(): Promise<string>
-      setNotesPath(newPath: string, migrate: boolean): Promise<{ success: boolean; migratedCount?: number; error?: string }>
-      resetNotesPath(migrate: boolean): Promise<{ success: boolean; migratedCount?: number; error?: string }>
+      getRootPath(): Promise<string>
+      setRootPath(newPath: string | null): Promise<{ success: boolean; oldRoot?: string; newRoot?: string; error?: string }>
       getTodosPath(): Promise<string>
-      getDefaultTodosPath(): Promise<string>
-      setTodosPath(newPath: string, migrate: boolean): Promise<{ success: boolean; migratedCount?: number; error?: string }>
-      resetTodosPath(migrate: boolean): Promise<{ success: boolean; migratedCount?: number; error?: string }>
+      setTodosPath(newPath: string | null): Promise<{ success: boolean; oldPath?: string; newPath?: string; error?: string }>
       clearNotes(): Promise<{ success: boolean; cleared?: number; backupDir?: string; error?: string }>
       clearTodos(): Promise<{ success: boolean; cleared?: number; backupDir?: string; error?: string }>
     }
@@ -123,6 +134,7 @@ interface NoteMeta {
   createdAt: string
   updatedAt: string
   isDeleted: boolean
+  fileName?: string
 }
 
 interface TodoItem {

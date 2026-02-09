@@ -20,6 +20,7 @@ export default function TitleBar() {
           <span style={{ letterSpacing: '0.5px' }}>Quick</span><span style={{ letterSpacing: '0.5px' }}>Start</span>
         </span>
       </div>
+
       <div className="flex items-center gap-2 no-drag">
         <button
           onClick={() => {

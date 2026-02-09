@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNoteStore } from '../../stores/noteStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import {
   Search, Trash2, Send, Check, FileText, Image as ImageIcon,
-  ChevronDown, ChevronUp, Loader2, Type, X, PenLine, Pencil, Undo2
+  ChevronDown, ChevronUp, Loader2, Type, X, PenLine, Pencil, Undo2, ArrowLeft
 } from 'lucide-react'
+import WorkspaceDropdown from './WorkspaceDropdown'
 
 /* ── image attachment ── */
 interface PastedImage {
@@ -25,6 +27,7 @@ interface UndoToast {
 export default function NotesTab() {
   const notes = useNoteStore((s) => s.notes)
   const draft = useNoteStore((s) => s.draft)
+  const noteTitle = useNoteStore((s) => s.title)
   const editingId = useNoteStore((s) => s.editingId)
   const loading = useNoteStore((s) => s.loading)
   const loadNotes = useNoteStore((s) => s.loadNotes)
@@ -32,8 +35,10 @@ export default function NotesTab() {
   const softDeleteNote = useNoteStore((s) => s.softDeleteNote)
   const loadNoteContent = useNoteStore((s) => s.loadNoteContent)
   const setDraft = useNoteStore((s) => s.setDraft)
+  const setTitle = useNoteStore((s) => s.setTitle)
   const setEditingId = useNoteStore((s) => s.setEditingId)
   const clearEditor = useNoteStore((s) => s.clearEditor)
+  const activeWorkspaceId = useSettingsStore((s) => s.activeWorkspaceId)
 
   const [search, setSearch] = useState('')
   const [showSearch, setShowSearch] = useState(false)
@@ -45,13 +50,16 @@ export default function NotesTab() {
   const [previewImg, setPreviewImg] = useState<string | null>(null)
   const [undoToast, setUndoToast] = useState<UndoToast | null>(null)
   const [browseMode, setBrowseMode] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isDark = document.documentElement.classList.contains('dark')
 
-  useEffect(() => { loadNotes() }, [loadNotes])
-  useEffect(() => { textareaRef.current?.focus() }, [])
+  // Reload notes when workspace changes
+  useEffect(() => { loadNotes() }, [loadNotes, activeWorkspaceId])
+  useEffect(() => { titleRef.current?.focus() }, [])
 
   // ── Draft change with auto-save indicator ──
   const handleDraftChange = useCallback((value: string) => {
@@ -76,12 +84,10 @@ export default function NotesTab() {
     while ((match = imgRegex.exec(content)) !== null) {
       const fileName = match[1] || `image_${extractedImages.length}`
       const rawUrl = match[2]
-      // Convert file:// paths to quickstart:// protocol
       let imageUrl: string
       if (rawUrl.startsWith('quickstart://')) {
         imageUrl = rawUrl
       } else if (rawUrl.startsWith('file://')) {
-        // Extract just the filename from the path
         const parts = rawUrl.replace(/\\/g, '/').split('/')
         const fn = parts[parts.length - 1]
         imageUrl = `quickstart://media/${fn}`
@@ -90,15 +96,15 @@ export default function NotesTab() {
       }
       extractedImages.push({
         id: `loaded_${extractedImages.length}_${Date.now().toString(36)}`,
-        fileName,
-        filePath: rawUrl,
-        imageUrl,
+        fileName, filePath: rawUrl, imageUrl,
       })
     }
 
-    // Remove image markdown from text for clean editing
     const textOnly = content.replace(imgRegex, '').trimEnd()
 
+    // Get title from note metadata
+    const noteMeta = notes.find((n) => n.id === noteId)
+    setTitle(noteMeta?.title || '')
     setDraft(textOnly)
     setPastedImages(extractedImages)
     setEditingId(noteId)
@@ -106,15 +112,11 @@ export default function NotesTab() {
     setShowSearch(false)
     setSearch('')
     setIsFocused(true)
-    // Focus and move cursor to end
     setTimeout(() => {
       const ta = textareaRef.current
-      if (ta) {
-        ta.focus()
-        ta.selectionStart = ta.selectionEnd = ta.value.length
-      }
+      if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length }
     }, 50)
-  }, [loadNoteContent, setDraft, setEditingId])
+  }, [loadNoteContent, setDraft, setEditingId, setTitle, notes])
 
   // ── New note button ──
   const handleNewNote = useCallback(() => {
@@ -122,7 +124,7 @@ export default function NotesTab() {
     setPastedImages([])
     setBrowseMode(false)
     setIsFocused(true)
-    setTimeout(() => textareaRef.current?.focus(), 50)
+    setTimeout(() => titleRef.current?.focus(), 50)
   }, [clearEditor])
 
   // ── Paste handler ──
@@ -135,7 +137,7 @@ export default function NotesTab() {
     e.preventDefault()
     setPasteStatus('正在保存图片...')
     try {
-      const result = await window.api.notes.pasteImage('default')
+      const result = await window.api.notes.pasteImage(activeWorkspaceId)
       if (!result.success || !result.imageUrl) {
         setPasteStatus(result.error === 'clipboard has no image' ? '剪贴板无图片' : '图片保存失败')
         setTimeout(() => setPasteStatus(null), 2000)
@@ -168,20 +170,20 @@ export default function NotesTab() {
   // ── Save: create or update ──
   const handleSave = async () => {
     const hasText = draft.trim().length > 0
+    const hasTitle = noteTitle.trim().length > 0
     const hasImages = pastedImages.length > 0
-    if (!hasText && !hasImages) return
+    if (!hasText && !hasImages && !hasTitle) return
 
     let finalContent = draft
     if (hasImages) {
       if (finalContent && !finalContent.endsWith('\n')) finalContent += '\n\n'
       for (const img of pastedImages) {
-        // Use quickstart:// protocol URL for all images
         const url = img.imageUrl.startsWith('quickstart://') ? img.imageUrl : `quickstart://media/${img.fileName}`
         finalContent += `![${img.fileName}](${url})\n`
       }
     }
 
-    await saveNote(finalContent)
+    await saveNote(finalContent, noteTitle)
     setPastedImages([])
     setSaveSuccess(true)
     setIsFocused(false)
@@ -227,7 +229,7 @@ export default function NotesTab() {
     clearTimeout(undoToast.timer)
     clearInterval(undoToast.intervalId)
     // Restore: save with the same id to un-delete
-    await window.api.notes.save('default', {
+    await window.api.notes.save(activeWorkspaceId, {
       id: undoToast.noteId,
       content: '',
       title: undoToast.noteTitle
@@ -356,58 +358,85 @@ export default function NotesTab() {
     <div className="flex flex-col h-full relative">
 
       {/* ====== Top bar ====== */}
-      <div className="flex items-center justify-between flex-shrink-0" style={{ padding: '10px var(--container-padding) 4px var(--container-padding)' }}>
-        <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400/70 dark:text-zinc-500/70">
-          {showSearch ? '' : editingId ? '编辑记录' : `${notes.length} 条记录`}
-        </span>
-        <div className="flex items-center gap-1">
-          {browseMode && (
+      <div className="flex items-center flex-shrink-0" style={{ padding: '10px var(--container-padding) 4px var(--container-padding)', minHeight: '38px' }}>
+        {showSearch ? (
+          /* ── Search mode: back arrow + inline search input ── */
+          <div className="flex items-center gap-2 flex-1 min-w-0" style={{ animation: 'searchExpand 200ms cubic-bezier(0.4,0,0.2,1) forwards' }}>
             <button
-              onClick={() => { setBrowseMode(false); setShowSearch(false); setSearch('') }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-violet-500 transition-all"
-              style={{ background: 'transparent' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.08)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-              title="返回写作"
+              onClick={() => { setShowSearch(false); setSearch(''); setBrowseMode(false) }}
+              className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:bg-zinc-500/8 transition-all flex-shrink-0"
             >
-              <ChevronUp size={18} />
+              <ArrowLeft size={15} />
             </button>
-          )}
-          <button
-            onClick={() => {
-              setShowSearch(!showSearch)
-              if (!showSearch) setBrowseMode(true)
-              else { setSearch(''); setBrowseMode(false) }
-            }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${showSearch ? 'text-violet-500' : 'text-zinc-400'}`}
-            style={{ background: showSearch ? (isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.10)') : 'transparent' }}
-            onMouseEnter={(e) => { if (!showSearch) e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.08)' }}
-            onMouseLeave={(e) => { if (!showSearch) e.currentTarget.style.background = 'transparent' }}
-            title="搜索"
-          >
-            {showSearch ? <X size={18} /> : <Search size={18} />}
-          </button>
-        </div>
+            <div className="flex-1 min-w-0 relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-300 pointer-events-none" />
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="搜索记录..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearch(false); setSearch(''); setBrowseMode(false) } }}
+                className="w-full text-[12px] font-medium text-zinc-700 focus:outline-none transition-all placeholder:text-zinc-300"
+                style={{
+                  padding: '6px 8px 6px 28px',
+                  borderRadius: '8px',
+                  background: 'rgba(0,0,0,0.025)',
+                  border: '1px solid rgba(0,0,0,0.04)',
+                  caretColor: '#8b5cf6',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.20)' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.04)' }}
+              />
+              {search && (
+                <button
+                  onClick={() => { setSearch(''); searchRef.current?.focus() }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center text-zinc-300 hover:text-zinc-500 transition-all"
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* ── Normal mode: count + workspace + search icon ── */
+          <>
+            <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400/70 flex-1">
+              {editingId ? '编辑记录' : `${notes.length} 条记录`}
+            </span>
+            <div className="flex items-center gap-1">
+              <WorkspaceDropdown />
+              {browseMode && (
+                <button
+                  onClick={() => { setBrowseMode(false); setShowSearch(false); setSearch('') }}
+                  className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-400 hover:text-violet-500 hover:bg-violet-500/6 transition-all"
+                  title="返回写作"
+                >
+                  <ChevronUp size={16} />
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setShowSearch(true)
+                  setBrowseMode(true)
+                  setTimeout(() => searchRef.current?.focus(), 80)
+                }}
+                className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-400 hover:text-violet-500 hover:bg-violet-500/6 transition-all"
+                title="搜索"
+              >
+                <Search size={15} />
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ====== Search ====== */}
-      <div
-        className="overflow-hidden transition-all duration-300 ease-out flex-shrink-0"
-        style={{ maxHeight: showSearch ? '48px' : '0', opacity: showSearch ? 1 : 0, padding: '0 var(--container-padding)' }}
-      >
-        <div className="relative pb-2">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
-            placeholder="搜索记录..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            autoFocus={showSearch}
-            className="w-full pl-9 pr-3 py-2.5 text-[13px] rounded-xl bg-white/40 dark:bg-white/5 focus:outline-none focus:ring-1 focus:ring-violet-400/30 transition-all"
-            style={{ boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.04)' }}
-          />
-        </div>
-      </div>
+      <style>{`
+        @keyframes searchExpand {
+          from { opacity: 0; transform: translateX(30px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
 
       {/* ====== MAIN ====== */}
       {!browseMode ? (
@@ -459,7 +488,7 @@ export default function NotesTab() {
             }}
           >
             {/* Placeholder */}
-            {!draft && !isFocused && pastedImages.length === 0 && (
+            {!draft && !noteTitle && !isFocused && pastedImages.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none animate-fadeIn z-0" style={{ paddingBottom: '48px' }}>
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-2.5" style={{ background: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', opacity: 0.2 }}>
                   <PenLine size={16} className="text-white" />
@@ -469,6 +498,25 @@ export default function NotesTab() {
               </div>
             )}
 
+            {/* Title Input */}
+            <input
+              ref={titleRef}
+              type="text"
+              value={noteTitle}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); textareaRef.current?.focus() }
+                if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleSave() }
+              }}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => { if (!draft.trim() && !noteTitle.trim() && pastedImages.length === 0) setIsFocused(false) }}
+              placeholder="输入标题..."
+              className="w-full bg-transparent focus:outline-none text-zinc-800 dark:text-zinc-100 font-bold relative z-10"
+              style={{ padding: '1rem 1.25rem 0 1.25rem', fontSize: '16px', lineHeight: '1.5', caretColor: '#8b5cf6' }}
+            />
+            {/* Divider between title and content */}
+            <div className="relative z-10" style={{ margin: '8px 1.25rem', height: '1px', background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }} />
+
             {/* Textarea */}
             <textarea
               ref={textareaRef}
@@ -477,10 +525,10 @@ export default function NotesTab() {
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               onFocus={() => setIsFocused(true)}
-              onBlur={() => { if (!draft.trim() && pastedImages.length === 0) setIsFocused(false) }}
-              placeholder=""
-              className="w-full flex-1 bg-transparent resize-none focus:outline-none text-zinc-700 dark:text-zinc-200 relative z-10"
-              style={{ padding: '1.2rem 1.25rem 0.5rem 1.25rem', fontSize: '14px', lineHeight: '1.85', caretColor: '#8b5cf6' }}
+              onBlur={() => { if (!draft.trim() && !noteTitle.trim() && pastedImages.length === 0) setIsFocused(false) }}
+              placeholder="正文内容..."
+              className="w-full flex-1 bg-transparent resize-none focus:outline-none text-zinc-700 dark:text-zinc-200 relative z-10 placeholder:text-zinc-300/60"
+              style={{ padding: '0 1.25rem 0.5rem 1.25rem', fontSize: '14px', lineHeight: '1.85', caretColor: '#8b5cf6' }}
             />
 
             {/* Image strip */}
@@ -545,7 +593,7 @@ export default function NotesTab() {
               {!editingId && (
                 <button
                   onClick={handleSave}
-                  disabled={!draft.trim() && pastedImages.length === 0}
+                  disabled={!draft.trim() && !noteTitle.trim() && pastedImages.length === 0}
                   className="flex items-center gap-2 text-[13px] font-bold text-white transition-all tracking-wide"
                   style={{
                     padding: '6px 14px',
@@ -553,7 +601,7 @@ export default function NotesTab() {
                     marginRight: '4px',
                     ...(saveSuccess
                       ? { background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', boxShadow: '0 3px 12px -2px rgba(67,233,123,0.4)' }
-                      : (draft.trim() || pastedImages.length > 0)
+                      : (draft.trim() || noteTitle.trim() || pastedImages.length > 0)
                         ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', boxShadow: '0 3px 14px -2px rgba(102,126,234,0.5)' }
                         : { background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', color: isDark ? '#52525b' : '#a1a1aa', cursor: 'not-allowed', boxShadow: 'none' }),
                   }}
@@ -611,12 +659,10 @@ export default function NotesTab() {
             </div>
           ))}
           {filteredNotes.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center mt-12 animate-fadeInUp">
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-2.5" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', opacity: 0.4 }}>
-                <FileText size={18} className="text-white" />
-              </div>
-              <p className="text-[12px] font-semibold text-zinc-400 dark:text-zinc-500">{search ? '没有匹配的记录' : '暂无记录'}</p>
-              <p className="text-[10px] text-zinc-400/50 mt-0.5">{search ? '换个关键词试试' : '返回写作模式开始记录'}</p>
+            <div className="flex flex-col items-center justify-center mt-10 animate-fadeInUp">
+              <Search size={20} className="mb-2" style={{ color: 'rgba(139,92,246,0.18)' }} />
+              <p className="text-[11px] font-medium text-zinc-400/60">{search ? '没有匹配的记录' : '暂无记录'}</p>
+              <p className="text-[9px] text-zinc-400/35 mt-0.5">{search ? '换个关键词试试' : '返回写作模式开始记录'}</p>
             </div>
           )}
         </div>

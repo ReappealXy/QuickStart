@@ -1,0 +1,169 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============ Custom scrollbar ============ */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.08);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.15);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.08);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+/* ============ Electron drag ============ */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ============ Selection ============ */
+::selection {
+  background-color: rgba(139, 92, 246, 0.2);
+}
+
+/* ============ Placeholder ============ */
+::placeholder {
+  color: #a1a1aa;
+  opacity: 1;
+}
+.dark ::placeholder {
+  color: #52525b;
+}
+
+/* ============ Color tokens (unified across all pages) ============ */
+:root {
+  --container-padding: 18px;
+  --c-primary-from: #667eea;
+  --c-primary-to: #764ba2;
+  --c-accent-from: #f093fb;
+  --c-accent-to: #f5576c;
+  --c-success-from: #43e97b;
+  --c-success-to: #38f9d7;
+  --c-muted-from: #a18cd1;
+  --c-muted-to: #fbc2eb;
+  --c-warm-from: #fa709a;
+  --c-warm-to: #fee140;
+  --gradient-primary: linear-gradient(135deg, var(--c-primary-from) 0%, var(--c-primary-to) 100%);
+  --gradient-accent: linear-gradient(135deg, var(--c-accent-from) 0%, var(--c-accent-to) 100%);
+  --gradient-success: linear-gradient(135deg, var(--c-success-from) 0%, var(--c-success-to) 100%);
+  --gradient-muted: linear-gradient(135deg, var(--c-muted-from) 0%, var(--c-muted-to) 100%);
+  --shadow-primary: 0 4px 16px -3px rgba(102, 126, 234, 0.45);
+}
+
+/* ============ Gradient utility classes ============ */
+.gradient-primary {
+  background: var(--gradient-primary);
+}
+.gradient-accent {
+  background: var(--gradient-accent);
+}
+.gradient-success {
+  background: var(--gradient-success);
+}
+.gradient-muted {
+  background: var(--gradient-muted);
+}
+
+/* ============ Glass morphism ============ */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.dark .glass {
+  background: rgba(24, 24, 27, 0.75);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ============ Card shadows ============ */
+.card-shadow {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06);
+}
+.card-shadow-hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.1);
+}
+.dark .card-shadow {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.3);
+}
+.dark .card-shadow-hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* ============ Smooth transitions ============ */
+button, input, textarea, a {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============ Animations ============ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out forwards;
+}
+
+/* Stagger children */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; }
+.stagger > *:nth-child(7) { animation-delay: 240ms; }
+.stagger > *:nth-child(8) { animation-delay: 280ms; }

@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+release/
+dist/
+
+# Electron cache
+*.asar
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Sensitive / User data
+config.json
+*.key
+*.pem
+
+# Temp
+*.log
+*.tmp
+.cache/
+
+# Environment
+.env
+.env.*

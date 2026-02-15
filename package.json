@@ -41,6 +41,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "QuickStart",
       "runAfterFinish": true,
+      "unicode": true,
       "license": "build/license.txt",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",

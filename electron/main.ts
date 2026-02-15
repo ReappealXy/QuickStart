@@ -747,11 +747,29 @@ function setupIPC(): void {
         tags: (note.tags as string[]) || [],
         createdAt: ei >= 0 ? index.notes[ei].createdAt : now,
         updatedAt: now, isDeleted: false, fileName,
+        statusIcon: (note.statusIcon as string) || (ei >= 0 ? (index.notes[ei].statusIcon as string || '') : ''),
       }
       if (ei >= 0) index.notes[ei] = meta
       else index.notes.unshift(meta)
       safeWriteJSON(idxPath, index)
       return { success: true, id }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('notes:updateStatusIcon', (_e, wsId: string, noteId: string, statusIcon: string) => {
+    try {
+      const root = getWsNotesRoot(wsId)
+      const idxPath = join(root, 'index.json')
+      const index = safeReadJSON<{ workspace: unknown; notes: Record<string, unknown>[] }>(
+        idxPath, { workspace: { id: wsId }, notes: [] }
+      )
+      const ei = index.notes.findIndex((n) => n.id === noteId)
+      if (ei < 0) return { success: false, error: 'note not found' }
+      index.notes[ei].statusIcon = statusIcon
+      safeWriteJSON(idxPath, index)
+      return { success: true }
     } catch (err) {
       return { success: false, error: String(err) }
     }
@@ -946,6 +964,7 @@ function setupIPC(): void {
             merged += `# ${note.date}\n\n`
             currentDate = note.date
           }
+          if (note.title) merged += `## ${note.title}\n\n`
           merged += note.content + '\n\n'
         }
 
@@ -981,6 +1000,83 @@ function setupIPC(): void {
         writeFileSync(result.filePath, pdfData)
 
         return { success: true, filePath: result.filePath, count: notes.length }
+      }
+
+      return { success: false, error: '不支持的格式' }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  // ---- Single Note Export ----
+  ipcMain.handle('notes:exportSingle', async (_e, wsId: string, noteId: string, format: 'md' | 'pdf') => {
+    if (!mainWindow) return { success: false, error: 'no window' }
+    try {
+      const root = getWsNotesRoot(wsId)
+      const idxPath = join(root, 'index.json')
+      const indexData = safeReadJSON<{ notes?: Array<{ id?: string; fileName?: string; title?: string }> }>(idxPath, { notes: [] })
+      const noteMeta = (indexData.notes || []).find((n) => n.id === noteId)
+      if (!noteMeta) return { success: false, error: '找不到该记录' }
+
+      const filePath = findNoteFile(wsId, noteId)
+      if (!filePath || !existsSync(filePath)) return { success: false, error: '找不到记录文件' }
+
+      const content = readFileSync(filePath, 'utf-8')
+      const title = noteMeta.title || noteMeta.fileName?.replace('.md', '') || '无标题'
+      const merged = `# ${title}\n\n${content}`.trim()
+      const safeName = sanitizeTitle(title)
+
+      if (format === 'md') {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: '导出 Markdown',
+          defaultPath: `${safeName}.md`,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (result.canceled || !result.filePath) return { success: false, canceled: true }
+        writeFileSync(result.filePath, merged, 'utf-8')
+        return { success: true, filePath: result.filePath }
+      }
+
+      if (format === 'pdf') {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: '导出 PDF',
+          defaultPath: `${safeName}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        })
+        if (result.canceled || !result.filePath) return { success: false, canceled: true }
+
+        const MarkdownIt = require('markdown-it')
+        const md = new MarkdownIt({ html: true, breaks: true, linkify: true })
+        const htmlBody = md.render(merged)
+        const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.8; font-size: 14px; max-width: 700px; margin: 0 auto; }
+          h1 { font-size: 20px; color: #6d28d9; border-bottom: 2px solid #ede9fe; padding-bottom: 8px; margin-top: 32px; }
+          h2 { font-size: 17px; color: #374151; }
+          h3 { font-size: 15px; color: #4b5563; }
+          hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+          code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+          pre { background: #f8fafc; padding: 16px; border-radius: 8px; overflow-x: auto; border: 1px solid #e2e8f0; }
+          pre code { background: none; padding: 0; }
+          blockquote { border-left: 3px solid #8b5cf6; padding-left: 16px; color: #6b7280; margin: 16px 0; }
+          img { max-width: 100%; border-radius: 8px; }
+          a { color: #7c3aed; }
+          ul, ol { padding-left: 24px; }
+          li { margin-bottom: 4px; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+          th { background: #f9fafb; }
+        </style></head><body>${htmlBody}</body></html>`
+
+        const pdfWin = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { contextIsolation: true } })
+        await pdfWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`)
+        const pdfData = await pdfWin.webContents.printToPDF({
+          printBackground: true,
+          marginsType: 0,
+          pageSize: 'A4',
+        })
+        pdfWin.destroy()
+        writeFileSync(result.filePath, pdfData)
+        return { success: true, filePath: result.filePath }
       }
 
       return { success: false, error: '不支持的格式' }

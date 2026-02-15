@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('notes:pasteImage', wsId),
     export: (startDate: string, endDate: string, format: 'md' | 'pdf', wsId?: string) =>
       ipcRenderer.invoke('notes:export', startDate, endDate, format, wsId),
+    exportSingle: (wsId: string, noteId: string, format: 'md' | 'pdf') =>
+      ipcRenderer.invoke('notes:exportSingle', wsId, noteId, format),
+    updateStatusIcon: (wsId: string, noteId: string, statusIcon: string) =>
+      ipcRenderer.invoke('notes:updateStatusIcon', wsId, noteId, statusIcon),
     openPath: (filePath: string) => ipcRenderer.invoke('notes:openPath', filePath),
   },
   todos: {

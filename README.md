@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.1-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.2-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -113,6 +113,15 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ## 版本更新
 
+### v0.5.2 (2026-02-15)
+
+- **单条记录导出** —— 每条记录卡片新增导出按钮，点击弹出居中弹窗选择 Markdown 或 PDF 格式，单条记录即可独立导出
+- **PDF 导出标题修复** —— 修复批量导出 PDF 时记录标题缺失的问题，现与 Markdown 导出一致包含 `## 标题`
+- **记录时间显示优化** —— 最近记录列表的时间从仅显示时分改为完整的"年/月/日 时:分"格式
+- **思维标记系统** —— 标题输入框左侧新增状态图标选择器（横向药丸菜单），支持 ⚠️ 思维陷阱、💡 核心灵感、📌 关键定稿三种标记，持久化存储并在列表中同步显示
+- **沉浸式编辑模式** —— 点击编辑区域时输入框平滑展开覆盖最近记录列表，失焦后自动缩回，展开状态采用实色背景 + 浮动投影
+- **删除反馈重构** —— 删除确认条重构为毛玻璃风格浮动 Snackbar，新增紫色渐变倒计时进度条、撤销胶囊按钮、底部滑入动画
+
 ### v0.5.1 (2026-02-09)
 
 - **导出工作区选择** —— 数据导出"记录"模式新增自定义下拉菜单，可选择导出指定工作区的记录
@@ -158,7 +167,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.5.1.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.5.2.exe`。
 
 安装过程支持：
 - 自定义安装目录

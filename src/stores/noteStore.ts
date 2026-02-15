@@ -9,6 +9,7 @@ interface NoteState {
   notes: NoteMeta[]
   draft: string
   title: string
+  statusIcon: string
   editingId: string | null
   loading: boolean
   loadNotes: () => Promise<void>
@@ -19,6 +20,8 @@ interface NoteState {
   loadNoteContent: (id: string) => Promise<string>
   setDraft: (content: string) => void
   setTitle: (title: string) => void
+  setStatusIcon: (icon: string) => void
+  updateNoteStatusIcon: (noteId: string, icon: string) => Promise<void>
   setEditingId: (id: string | null) => void
   clearEditor: () => void
 }
@@ -27,6 +30,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   notes: [],
   draft: '',
   title: '',
+  statusIcon: '',
   editingId: null,
   loading: false,
 
@@ -46,11 +50,11 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   saveNote: async (content: string, title?: string) => {
     const noteTitle = title ?? get().title
     if (!content.trim() && !noteTitle.trim()) return
-    const { editingId } = get()
-    const noteObj: Record<string, unknown> = { content, title: noteTitle }
+    const { editingId, statusIcon } = get()
+    const noteObj: Record<string, unknown> = { content, title: noteTitle, statusIcon }
     if (editingId) noteObj.id = editingId
     await window.api.notes.save(getWsId(), noteObj)
-    set({ draft: '', title: '', editingId: null })
+    set({ draft: '', title: '', statusIcon: '', editingId: null })
     await get().loadNotes()
   },
 
@@ -81,6 +85,11 @@ export const useNoteStore = create<NoteState>((set, get) => ({
 
   setDraft: (content: string) => set({ draft: content }),
   setTitle: (title: string) => set({ title }),
+  setStatusIcon: (icon: string) => set({ statusIcon: icon }),
+  updateNoteStatusIcon: async (noteId: string, icon: string) => {
+    await window.api.notes.updateStatusIcon(getWsId(), noteId, icon)
+    await get().loadNotes()
+  },
   setEditingId: (id: string | null) => set({ editingId: id }),
-  clearEditor: () => set({ draft: '', title: '', editingId: null }),
+  clearEditor: () => set({ draft: '', title: '', statusIcon: '', editingId: null }),
 }))

@@ -3,9 +3,22 @@ import { useNoteStore } from '../../stores/noteStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import {
   Search, Trash2, Send, Check, FileText, Image as ImageIcon,
-  ChevronDown, ChevronUp, Loader2, Type, X, PenLine, Pencil, Undo2, ArrowLeft
+  ChevronDown, ChevronUp, Loader2, Type, X, PenLine, Pencil, Undo2, ArrowLeft, Download,
+  AlertTriangle, Lightbulb, Pin, Circle, Ban, RotateCcw
 } from 'lucide-react'
 import WorkspaceDropdown from './WorkspaceDropdown'
+
+/* ── status icon options ── */
+const STATUS_ICONS = [
+  { key: '',      tooltip: '移除标记',  icon: Ban,           idle: '#94a3b8', hover: '#64748b', active: '#64748b', bg: 'rgba(0,0,0,0.04)', bgDark: 'rgba(255,255,255,0.06)' },
+  { key: 'alert', tooltip: '思维陷阱',  icon: AlertTriangle, idle: '#94a3b8', hover: '#f59e0b', active: '#f59e0b', bg: 'rgba(245,158,11,0.10)', bgDark: 'rgba(245,158,11,0.14)' },
+  { key: 'idea',  tooltip: '核心灵感',  icon: Lightbulb,     idle: '#94a3b8', hover: '#8b5cf6', active: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', bgDark: 'rgba(139,92,246,0.14)' },
+  { key: 'pin',   tooltip: '关键定稿',  icon: Pin,           idle: '#94a3b8', hover: '#ef4444', active: '#ef4444', bg: 'rgba(239,68,68,0.10)', bgDark: 'rgba(239,68,68,0.14)' },
+] as const
+
+function getStatusIconCfg(key: string) {
+  return STATUS_ICONS.find((s) => s.key === key) || STATUS_ICONS[0]
+}
 
 /* ── image attachment ── */
 interface PastedImage {
@@ -36,6 +49,9 @@ export default function NotesTab() {
   const loadNoteContent = useNoteStore((s) => s.loadNoteContent)
   const setDraft = useNoteStore((s) => s.setDraft)
   const setTitle = useNoteStore((s) => s.setTitle)
+  const statusIcon = useNoteStore((s) => s.statusIcon)
+  const setStatusIcon = useNoteStore((s) => s.setStatusIcon)
+  const updateNoteStatusIcon = useNoteStore((s) => s.updateNoteStatusIcon)
   const setEditingId = useNoteStore((s) => s.setEditingId)
   const clearEditor = useNoteStore((s) => s.clearEditor)
   const activeWorkspaceId = useSettingsStore((s) => s.activeWorkspaceId)
@@ -55,11 +71,37 @@ export default function NotesTab() {
   const searchRef = useRef<HTMLInputElement>(null)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
+  const statusDropdownRef = useRef<HTMLDivElement>(null)
+  const editorCardRef = useRef<HTMLDivElement>(null)
+
   const isDark = document.documentElement.classList.contains('dark')
+
+  // Close status dropdown on outside click
+  useEffect(() => {
+    if (!statusDropdownOpen) return
+    const handle = (e: MouseEvent) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target as Node)) setStatusDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [statusDropdownOpen])
+
+  // Collapse editor when clicking outside the editor card
+  useEffect(() => {
+    if (!isFocused) return
+    const handle = (e: MouseEvent) => {
+      if (editorCardRef.current && !editorCardRef.current.contains(e.target as Node)) {
+        setIsFocused(false)
+        setStatusDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [isFocused])
 
   // Reload notes when workspace changes
   useEffect(() => { loadNotes() }, [loadNotes, activeWorkspaceId])
-  useEffect(() => { titleRef.current?.focus() }, [])
 
   // ── Draft change with auto-save indicator ──
   const handleDraftChange = useCallback((value: string) => {
@@ -102,9 +144,10 @@ export default function NotesTab() {
 
     const textOnly = content.replace(imgRegex, '').trimEnd()
 
-    // Get title from note metadata
+    // Get title and statusIcon from note metadata
     const noteMeta = notes.find((n) => n.id === noteId)
     setTitle(noteMeta?.title || '')
+    setStatusIcon(noteMeta?.statusIcon || '')
     setDraft(textOnly)
     setPastedImages(extractedImages)
     setEditingId(noteId)
@@ -247,6 +290,15 @@ export default function NotesTab() {
     // Already soft-deleted, just dismiss the toast — it stays deleted
   }, [undoToast])
 
+  // ── Export single note (modal) ──
+  const [exportModalNoteId, setExportModalNoteId] = useState<string | null>(null)
+  const exportModalNote = exportModalNoteId ? notes.find((n) => n.id === exportModalNoteId) : null
+
+  const handleExportSingle = useCallback(async (noteId: string, format: 'md' | 'pdf') => {
+    setExportModalNoteId(null)
+    await window.api.notes.exportSingle(activeWorkspaceId, noteId, format)
+  }, [activeWorkspaceId])
+
   // ── Filtered notes ──
   const filteredNotes = notes.filter(
     (n) => !search || n.title.includes(search) || n.preview.includes(search)
@@ -317,24 +369,46 @@ export default function NotesTab() {
           </div>
         )}
         {compact && (
-          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5" style={{ background: isEditing ? '#8b5cf6' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }} />
+          <div className="flex-shrink-0 mt-0.5">
+            {note.statusIcon ? (
+              (() => {
+                const cfg = getStatusIconCfg(note.statusIcon)
+                const Icon = cfg.icon
+                return Icon ? <Icon size={11} style={{ color: cfg.active }} /> : <div className="w-1.5 h-1.5 rounded-full" style={{ background: isEditing ? '#8b5cf6' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }} />
+              })()
+            ) : (
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: isEditing ? '#8b5cf6' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }} />
+            )}
+          </div>
         )}
 
         <div className="flex-1 min-w-0">
-          <div className={`${compact ? 'text-[11px]' : 'text-[12.5px]'} font-bold ${isEditing ? 'text-violet-600 dark:text-violet-300' : 'text-zinc-700 dark:text-zinc-200'} truncate leading-tight`}>
-            {note.title}
+          <div className={`flex items-center gap-1.5 ${compact ? 'text-[11px]' : 'text-[12.5px]'} font-bold ${isEditing ? 'text-violet-600 dark:text-violet-300' : 'text-zinc-700 dark:text-zinc-200'} leading-tight`}>
+            {!compact && note.statusIcon && (() => {
+              const cfg = getStatusIconCfg(note.statusIcon)
+              const Icon = cfg.icon
+              return Icon ? <Icon size={13} style={{ color: cfg.active }} className="flex-shrink-0" /> : null
+            })()}
+            <span className="truncate">{note.title}</span>
           </div>
           {!compact && note.preview && note.preview !== note.title && (
             <div className="text-[10.5px] text-zinc-400 dark:text-zinc-500 truncate leading-relaxed" style={{ marginTop: '4px' }}>{note.preview}</div>
           )}
           <div className="text-[9px] text-zinc-300 dark:text-zinc-600 font-medium" style={{ marginTop: compact ? '2px' : '4px' }}>
-            {new Date(note.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+            {new Date(note.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
             {isEditing && <span className="ml-1.5 text-violet-400 font-bold">编辑中</span>}
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" style={{ marginRight: '2px' }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setExportModalNoteId(note.id) }}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all"
+            title="导出"
+          >
+            <Download size={12} />
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); handleNoteClick(note.id) }}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-400 hover:bg-violet-500/10 hover:text-violet-500 transition-all"
@@ -436,6 +510,14 @@ export default function NotesTab() {
           from { opacity: 0; transform: translateX(30px); }
           to   { opacity: 1; transform: translateX(0); }
         }
+        @keyframes statusDropIn {
+          from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes undoSlideIn {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
 
       {/* ====== MAIN ====== */}
@@ -468,23 +550,28 @@ export default function NotesTab() {
 
           {/* ── EDITOR CARD ── */}
           <div
-            className="flex flex-col overflow-hidden transition-all duration-400 ease-out relative"
+            ref={editorCardRef}
+            className="flex flex-col relative"
             style={{
-              flex: '7 1 0%',
-              margin: '6px var(--container-padding) 0 var(--container-padding)',
+              flex: isFocused ? '1 1 100%' : '7 1 0%',
+              margin: isFocused
+                ? '6px var(--container-padding) 16px var(--container-padding)'
+                : '6px var(--container-padding) 0 var(--container-padding)',
               borderRadius: '16px',
-              background: isDark
-                ? (isFocused ? 'rgba(39,39,42,0.65)' : 'rgba(39,39,42,0.40)')
-                : (isFocused ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.50)'),
+              background: isFocused
+                ? isDark ? '#27272a' : '#ffffff'
+                : isDark ? 'rgba(39,39,42,0.40)' : 'rgba(255,255,255,0.50)',
               boxShadow: isFocused
                 ? isDark
-                  ? '0 0 0 1.5px rgba(139,92,246,0.35), 0 8px 40px -4px rgba(139,92,246,0.18), inset 0 1px 0 rgba(255,255,255,0.04)'
-                  : '0 0 0 1.5px rgba(139,92,246,0.22), 0 8px 40px -4px rgba(139,92,246,0.10), inset 0 1px 0 rgba(255,255,255,0.6)'
+                  ? '0 0 0 1.5px rgba(139,92,246,0.35), 0 16px 48px -8px rgba(139,92,246,0.20), 0 4px 16px rgba(0,0,0,0.25)'
+                  : '0 0 0 1.5px rgba(139,92,246,0.22), 0 16px 48px -8px rgba(139,92,246,0.12), 0 4px 16px rgba(0,0,0,0.06)'
                 : isDark
                   ? 'inset 0 2px 6px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.10)'
                   : 'inset 0 2px 6px rgba(0,0,0,0.025), 0 1px 4px rgba(0,0,0,0.04)',
-              backdropFilter: 'blur(24px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+              backdropFilter: isFocused ? undefined : 'blur(24px) saturate(180%)',
+              WebkitBackdropFilter: isFocused ? undefined : 'blur(24px) saturate(180%)',
+              zIndex: isFocused ? 40 : undefined,
+              transition: 'flex 300ms cubic-bezier(0.4,0,0.2,1), margin 300ms cubic-bezier(0.4,0,0.2,1), background 300ms ease, box-shadow 300ms ease',
             }}
           >
             {/* Placeholder */}
@@ -498,22 +585,108 @@ export default function NotesTab() {
               </div>
             )}
 
-            {/* Title Input */}
-            <input
-              ref={titleRef}
-              type="text"
-              value={noteTitle}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); textareaRef.current?.focus() }
-                if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleSave() }
-              }}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => { if (!draft.trim() && !noteTitle.trim() && pastedImages.length === 0) setIsFocused(false) }}
-              placeholder="输入标题..."
-              className="w-full bg-transparent focus:outline-none text-zinc-800 dark:text-zinc-100 font-bold relative z-10"
-              style={{ padding: '1rem 1.25rem 0 1.25rem', fontSize: '16px', lineHeight: '1.5', caretColor: '#8b5cf6' }}
-            />
+            {/* Title row: status icon + input */}
+            <div className="flex items-center relative" style={{ padding: '0.75rem 1rem 0 0.75rem', gap: '4px', zIndex: 50 }}>
+              {/* Status icon trigger */}
+              <div className="relative flex-shrink-0" ref={statusDropdownRef} style={{ width: '32px', height: '32px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setStatusDropdownOpen(!statusDropdownOpen); setIsFocused(true) }}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150"
+                  style={{ opacity: statusDropdownOpen ? 1 : statusIcon ? 0.8 : 0.45 }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                  onMouseLeave={(e) => { if (!statusDropdownOpen) e.currentTarget.style.opacity = statusIcon ? '0.8' : '0.45' }}
+                >
+                  {(() => {
+                    const cfg = getStatusIconCfg(statusIcon)
+                    return <cfg.icon size={16} style={{ color: statusIcon ? cfg.active : isDark ? '#71717a' : '#a1a1aa' }} />
+                  })()}
+                </button>
+
+                {/* Horizontal pill menu — opaque, z-9999 */}
+                {statusDropdownOpen && (
+                  <div
+                    className="absolute left-0"
+                    style={{
+                      top: 'calc(100% + 6px)',
+                      zIndex: 9999,
+                      borderRadius: '20px',
+                      padding: '5px 7px',
+                      background: isDark ? '#1e1e21' : '#f9f8ff',
+                      boxShadow: isDark
+                        ? '0 8px 28px -4px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.18)'
+                        : '0 8px 28px -4px rgba(80,60,140,0.18), 0 0 0 1px rgba(139,92,246,0.12)',
+                      display: 'flex',
+                      gap: '6px',
+                      pointerEvents: 'auto' as const,
+                      animation: 'statusDropIn 120ms cubic-bezier(0.16,1,0.3,1)',
+                    }}
+                  >
+                    {STATUS_ICONS.map((opt) => {
+                      const isActive = statusIcon === opt.key
+                      const Icon = opt.icon
+                      return (
+                        <div key={opt.key} className="relative group/stip">
+                          <button
+                            onClick={() => { setStatusIcon(opt.key); setStatusDropdownOpen(false) }}
+                            className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150"
+                            style={{
+                              background: isActive ? (isDark ? 'rgba(139,92,246,0.20)' : 'rgba(139,92,246,0.13)') : 'transparent',
+                              color: isActive ? opt.active : opt.idle,
+                              boxShadow: isActive ? (isDark ? '0 0 0 1.5px rgba(139,92,246,0.3)' : '0 0 0 1.5px rgba(139,92,246,0.2)') : 'none',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.color = opt.hover
+                              if (!isActive) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.color = isActive ? opt.active : opt.idle
+                              if (!isActive) e.currentTarget.style.background = 'transparent'
+                            }}
+                          >
+                            <Icon size={15} />
+                          </button>
+                          {/* Tooltip */}
+                          <div
+                            className="absolute left-1/2 pointer-events-none opacity-0 group-hover/stip:opacity-100 transition-opacity duration-150"
+                            style={{
+                              top: 'calc(100% + 7px)',
+                              transform: 'translateX(-50%)',
+                              whiteSpace: 'nowrap',
+                              padding: '4px 10px',
+                              borderRadius: '7px',
+                              background: 'rgba(0,0,0,0.80)',
+                              color: '#fff',
+                              fontSize: '11px',
+                              fontWeight: 500,
+                              letterSpacing: '0.01em',
+                              zIndex: 10000,
+                            }}
+                          >
+                            {opt.tooltip}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <input
+                ref={titleRef}
+                type="text"
+                value={noteTitle}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); textareaRef.current?.focus() }
+                  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleSave() }
+                }}
+                onFocus={() => setIsFocused(true)}
+                placeholder="输入标题..."
+                className="flex-1 min-w-0 bg-transparent focus:outline-none text-zinc-800 dark:text-zinc-100 font-bold"
+                style={{ paddingLeft: '4px', paddingRight: '4px', fontSize: '16px', lineHeight: '1.5', caretColor: '#8b5cf6' }}
+              />
+            </div>
             {/* Divider between title and content */}
             <div className="relative z-10" style={{ margin: '8px 1.25rem', height: '1px', background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }} />
 
@@ -525,7 +698,6 @@ export default function NotesTab() {
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               onFocus={() => setIsFocused(true)}
-              onBlur={() => { if (!draft.trim() && !noteTitle.trim() && pastedImages.length === 0) setIsFocused(false) }}
               placeholder="正文内容..."
               className="w-full flex-1 bg-transparent resize-none focus:outline-none text-zinc-700 dark:text-zinc-200 relative z-10 placeholder:text-zinc-300/60"
               style={{ padding: '0 1.25rem 0.5rem 1.25rem', fontSize: '14px', lineHeight: '1.85', caretColor: '#8b5cf6' }}
@@ -621,7 +793,15 @@ export default function NotesTab() {
           </div>
 
           {/* ── RECENT PREVIEW ── */}
-          <div className="flex flex-col overflow-hidden transition-all duration-500 ease-out" style={{ flex: '3 1 0%' }}>
+          <div
+            className="flex flex-col overflow-hidden"
+            style={{
+              flex: isFocused ? '0 0 0px' : '3 1 0%',
+              opacity: isFocused ? 0 : 1,
+              transition: 'flex 300ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease',
+              pointerEvents: isFocused ? 'none' : undefined,
+            }}
+          >
             <div className="flex items-center justify-between" style={{ padding: '10px var(--container-padding) 2px var(--container-padding)' }}>
               <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-400/50 dark:text-zinc-500/50">最近记录</span>
               {notes.length > 3 && (
@@ -671,41 +851,213 @@ export default function NotesTab() {
       {/* ====== Undo Delete Toast ====== */}
       {undoToast && (
         <div
-          className="absolute z-50 animate-fadeInUp"
+          className="absolute"
           style={{
-            bottom: 'var(--container-padding)',
+            bottom: '24px',
             left: 'var(--container-padding)',
             right: 'var(--container-padding)',
-            borderRadius: '14px',
-            background: isDark ? '#27272a' : '#ffffff',
+            zIndex: 9990,
+            borderRadius: '16px',
+            background: isDark ? 'rgba(30,30,33,0.88)' : 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(16px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(180%)',
             boxShadow: isDark
-              ? '0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)'
-              : '0 8px 32px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)',
-            padding: '12px 16px',
+              ? '0 12px 40px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)'
+              : '0 12px 40px -8px rgba(80,60,140,0.16), 0 0 0 1px rgba(0,0,0,0.04)',
+            padding: '14px 16px 10px',
+            overflow: 'hidden',
+            animation: 'undoSlideIn 280ms cubic-bezier(0.16,1,0.3,1)',
           }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Trash icon */}
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)' }}>
+              <Trash2 size={14} style={{ color: isDark ? '#f87171' : '#ef4444' }} />
+            </div>
+            {/* Text */}
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200 truncate">
-                已删除「{undoToast.noteTitle}」
+              <p className="text-[13px] font-semibold text-zinc-600 dark:text-zinc-300 truncate">
+                记录已移除
               </p>
-              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                {undoToast.remaining}s 后永久删除
+              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 truncate">
+                「{undoToast.noteTitle}」{undoToast.remaining}s 后永久删除
               </p>
             </div>
-            <button
-              onClick={handleForceDelete}
-              className="px-3 py-2 text-[11px] font-bold rounded-xl transition-all flex-shrink-0"
-              style={{ background: isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)', color: '#ef4444' }}
-            >
-              删除
-            </button>
+            {/* Undo pill */}
             <button
               onClick={handleUndo}
-              className="px-3 py-2 text-[11px] font-bold rounded-xl transition-all flex-shrink-0"
-              style={{ background: isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.08)', color: '#8b5cf6' }}
+              className="flex items-center gap-1.5 flex-shrink-0 font-bold transition-all duration-150"
+              style={{
+                padding: '7px 14px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                background: isDark ? 'rgba(139,92,246,0.14)' : 'rgba(139,92,246,0.10)',
+                color: isDark ? '#c4b5fd' : '#7c3aed',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.24)' : 'rgba(139,92,246,0.18)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.14)' : 'rgba(139,92,246,0.10)' }}
             >
-              撤销
+              <RotateCcw size={12} /> 撤销
+            </button>
+            {/* Dismiss X */}
+            <button
+              onClick={handleForceDelete}
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-150"
+              style={{ color: isDark ? '#52525b' : '#a1a1aa' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = isDark ? '#a1a1aa' : '#71717a'; e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = isDark ? '#52525b' : '#a1a1aa'; e.currentTarget.style.background = 'transparent' }}
+              title="立即删除"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          {/* Countdown progress bar */}
+          <div style={{ margin: '10px -16px -10px', height: '3px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+            <div
+              style={{
+                height: '100%',
+                borderRadius: '0 2px 2px 0',
+                background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+                width: `${(undoToast.remaining / 30) * 100}%`,
+                transition: 'width 1s linear',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ====== Export Modal ====== */}
+      {exportModalNote && (
+        <div
+          className="fixed inset-0 z-[998] flex items-center justify-center animate-fadeIn"
+          style={{
+            background: isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.18)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+          onClick={() => setExportModalNoteId(null)}
+        >
+          <div
+            className="relative animate-scaleIn"
+            style={{
+              width: '320px',
+              borderRadius: '20px',
+              padding: '28px 24px 20px',
+              background: isDark ? 'rgba(39,39,42,0.80)' : 'rgba(255,255,255,0.82)',
+              backdropFilter: 'blur(24px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+              boxShadow: isDark
+                ? '0 24px 64px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)'
+                : '0 24px 64px -12px rgba(100,80,160,0.22), 0 0 0 1px rgba(255,255,255,0.5)',
+              border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.45)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setExportModalNoteId(null)}
+              className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full flex items-center justify-center transition-all"
+              style={{
+                color: isDark ? '#71717a' : '#a1a1aa',
+                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'; e.currentTarget.style.color = isDark ? '#a1a1aa' : '#71717a' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'; e.currentTarget.style.color = isDark ? '#71717a' : '#a1a1aa' }}
+            >
+              <X size={14} />
+            </button>
+
+            {/* Header */}
+            <div style={{ marginBottom: '6px' }}>
+              <h3 className="text-[16px] font-bold text-zinc-800 dark:text-zinc-100" style={{ lineHeight: '1.3' }}>
+                导出记录
+              </h3>
+              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium mt-1.5 truncate" title={exportModalNote.title}>
+                「{exportModalNote.title}」
+              </p>
+            </div>
+            <p className="text-[10.5px] text-zinc-400/70 dark:text-zinc-500/60 leading-relaxed" style={{ marginBottom: '20px' }}>
+              选择导出格式，内容将包含标题与正文
+            </p>
+
+            {/* Format cards */}
+            <div className="flex gap-3" style={{ marginBottom: '16px' }}>
+              {/* Markdown card */}
+              <button
+                onClick={() => handleExportSingle(exportModalNote.id, 'md')}
+                className="flex-1 flex flex-col items-center gap-2.5 rounded-2xl transition-all duration-200 group/card"
+                style={{
+                  padding: '20px 12px 16px',
+                  background: isDark ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.06)',
+                  border: isDark ? '1.5px solid rgba(96,165,250,0.12)' : '1.5px solid rgba(96,165,250,0.10)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(139,92,246,0.5)' : 'rgba(139,92,246,0.4)'
+                  e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.07)'
+                  e.currentTarget.style.transform = 'scale(1.03)'
+                  e.currentTarget.style.boxShadow = isDark ? '0 8px 24px -4px rgba(139,92,246,0.2)' : '0 8px 24px -4px rgba(139,92,246,0.12)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(96,165,250,0.12)' : 'rgba(96,165,250,0.10)'
+                  e.currentTarget.style.background = isDark ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.06)'
+                  e.currentTarget.style.transform = 'scale(1)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ background: isDark ? 'rgba(96,165,250,0.15)' : 'rgba(96,165,250,0.12)' }}
+                >
+                  <FileText size={20} className="text-blue-500 dark:text-blue-400" />
+                </div>
+                <div className="text-center">
+                  <div className="text-[13px] font-bold text-zinc-700 dark:text-zinc-200">.md</div>
+                  <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">Markdown</div>
+                </div>
+              </button>
+
+              {/* PDF card */}
+              <button
+                onClick={() => handleExportSingle(exportModalNote.id, 'pdf')}
+                className="flex-1 flex flex-col items-center gap-2.5 rounded-2xl transition-all duration-200 group/card"
+                style={{
+                  padding: '20px 12px 16px',
+                  background: isDark ? 'rgba(248,113,113,0.08)' : 'rgba(248,113,113,0.05)',
+                  border: isDark ? '1.5px solid rgba(248,113,113,0.12)' : '1.5px solid rgba(248,113,113,0.10)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(139,92,246,0.5)' : 'rgba(139,92,246,0.4)'
+                  e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.07)'
+                  e.currentTarget.style.transform = 'scale(1.03)'
+                  e.currentTarget.style.boxShadow = isDark ? '0 8px 24px -4px rgba(139,92,246,0.2)' : '0 8px 24px -4px rgba(139,92,246,0.12)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = isDark ? 'rgba(248,113,113,0.12)' : 'rgba(248,113,113,0.10)'
+                  e.currentTarget.style.background = isDark ? 'rgba(248,113,113,0.08)' : 'rgba(248,113,113,0.05)'
+                  e.currentTarget.style.transform = 'scale(1)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ background: isDark ? 'rgba(248,113,113,0.15)' : 'rgba(248,113,113,0.10)' }}
+                >
+                  <FileText size={20} className="text-red-500 dark:text-red-400" />
+                </div>
+                <div className="text-center">
+                  <div className="text-[13px] font-bold text-zinc-700 dark:text-zinc-200">.pdf</div>
+                  <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">PDF 文档</div>
+                </div>
+              </button>
+            </div>
+
+            {/* Cancel button */}
+            <button
+              onClick={() => setExportModalNoteId(null)}
+              className="w-full text-center text-[12px] font-medium text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors py-1"
+            >
+              取消
             </button>
           </div>
         </div>

@@ -18,6 +18,8 @@ interface Window {
       readAttachment(filePath: string): Promise<string | null>
       pasteImage(wsId: string): Promise<{ success: boolean; fileName?: string; filePath?: string; imageUrl?: string; size?: number; error?: string }>
       export(startDate: string, endDate: string, format: 'md' | 'pdf', wsId?: string): Promise<{ success: boolean; filePath?: string; count?: number; canceled?: boolean; error?: string }>
+      exportSingle(wsId: string, noteId: string, format: 'md' | 'pdf'): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
+      updateStatusIcon(wsId: string, noteId: string, statusIcon: string): Promise<{ success: boolean }>
       openPath(filePath: string): Promise<void>
     }
     todos: {
@@ -135,6 +137,7 @@ interface NoteMeta {
   updatedAt: string
   isDeleted: boolean
   fileName?: string
+  statusIcon?: string
 }
 
 interface TodoItem {

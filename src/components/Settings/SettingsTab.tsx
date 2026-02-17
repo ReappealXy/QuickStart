@@ -1089,14 +1089,17 @@ export default function SettingsTab() {
   const CLEAR_UNDO_DURATION = 30
 
   // Cleanup undo toast on unmount
+  const clearUndoToastRef = useRef<ClearUndoToast | null>(null)
+  clearUndoToastRef.current = clearUndoToast
+
   useEffect(() => {
     return () => {
-      if (clearUndoToast) {
-        clearTimeout(clearUndoToast.timer)
-        clearInterval(clearUndoToast.intervalId)
+      if (clearUndoToastRef.current) {
+        clearTimeout(clearUndoToastRef.current.timer)
+        clearInterval(clearUndoToastRef.current.intervalId)
       }
     }
-  }, [clearUndoToast])
+  }, [])
 
   // Handle soft clear (show undo toast, delay actual deletion)
   const handleSoftClear = (type: 'notes' | 'todos' | 'clipboard') => {
@@ -1530,7 +1533,7 @@ export default function SettingsTab() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] font-bold text-zinc-700 dark:text-zinc-200">QuickStart</p>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.6.0 · 桌面快捷效率工具</p>
+            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.6.1 · 桌面快捷效率工具</p>
             <button
               onClick={() => window.api.shell.openExternal('https://github.com/ReappealXy/QuickStart')}
               className="inline-flex items-center gap-1 mt-1 text-[9px] font-medium transition-all cursor-pointer"

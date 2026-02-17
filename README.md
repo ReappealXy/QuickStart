@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.1-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -132,6 +132,10 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ## 版本更新
 
+### v0.6.1 (2026-02-17)
+
+- **修复撤销倒计时卡顿** —— 修复设置页清空操作的撤销进度条在 29s 后停止跳动的问题
+
 ### v0.6.0 (2026-02-17)
 
 - **新增剪贴板模块** —— 自动监听系统剪贴板，记录文本和图片历史，支持搜索、预览、编辑、复制、删除
@@ -197,7 +201,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.0.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.1.exe`。
 
 安装过程支持：
 - 自定义安装目录

@@ -5,11 +5,11 @@
 <h1 align="center">QuickStart</h1>
 
 <p align="center">
-  <strong>桌面快捷效率工具 —— 记录、清单、翻译、AI 对话，一键直达</strong>
+  <strong>桌面快捷效率工具 —— 记录、清单、翻译、AI 对话、剪贴板，一键直达</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.2-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -93,6 +93,23 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ---
 
+### 剪贴板
+
+<p align="center">
+  <img src="screenshots/clipboard.png" width="360" alt="剪贴板模块">
+</p>
+
+- **智能监听** —— 自动记录系统剪贴板中的文本和图片，去重存储
+- **历史管理** —— 按时间倒序展示剪贴板历史，支持搜索过滤
+- **全屏预览** —— 点击文本条目弹出沉浸式全屏 Modal，支持原地编辑
+- **图片预览** —— 点击图片展开高清大图预览，支持快速复制
+- **一键操作** —— 每条记录可快速复制、编辑、定位文件夹、删除
+- **精确时间戳** —— 显示 `YYYY-MM-DD HH:mm:ss` 格式的完整时间
+- **撤销删除** —— 删除后 30 秒内可撤销，防止误操作
+- **本地存储** —— 文本存储为 JSON，图片自动保存为本地文件
+
+---
+
 ### 设置
 
 <p align="center">
@@ -101,17 +118,30 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 - **记录存储** —— 独立配置记录根目录，工作区自动创建子文件夹，包含 Markdown 文本与图片附件
 - **清单存储** —— 独立配置清单数据目录，全局存储不随工作区变化
+- **剪贴板存储** —— 独立配置剪贴板数据目录，文本与图片统一管理
 - **数据导出** —— 选择"记录"或"清单"，设定日期范围，一键导出为 Markdown 或 PDF
 - **快捷日期预设** —— 今天、近 7 天、近 30 天、近 90 天一键选择
 - **AI 节点管理** —— 多节点配置（支持对话、翻译或两者兼用），拖拽排序，独立开关
 - **API Key 加密** —— 使用 AES-256-GCM 加密存储，验证连接后才保存
 - **快捷键自定义** —— 可自定义全局唤起/隐藏快捷键
 - **开机自启动** —— 一键开关，托盘菜单同步联动
-- **危险操作保护** —— 清空数据需 10 秒倒计时确认，执行前自动备份
+- **撤销保护机制** —— 清空数据后显示 30 秒撤销进度条，可随时取消操作
+- **数据自动迁移** —— 更改存储路径时自动迁移数据至新目录
 
 ---
 
 ## 版本更新
+
+### v0.6.0 (2026-02-17)
+
+- **新增剪贴板模块** —— 自动监听系统剪贴板，记录文本和图片历史，支持搜索、预览、编辑、复制、删除
+- **沉浸式文本预览** —— 剪贴板文本条目点击后展开全屏毛玻璃 Modal，支持查看态与编辑态无缝切换
+- **导航栏滑块动效** —— Tab 切换时紫色高亮滑块平滑过渡，采用 `cubic-bezier` 惯性曲线
+- **撤销机制统一** —— 所有删除/清空操作均采用 30 秒进度条撤销模式，与记录模块风格一致
+- **存储路径迁移增强** —— 更改存储目录时自动迁移数据，支持嵌套目录场景，原文件夹自动清理
+- **工作区永久保护** —— 至少保留一个工作区不可删除，防止数据孤立
+- **工作区删除撤销** —— 删除工作区后 30 秒内可撤销，物理文件延迟删除
+- **快捷键扩展** —— `Ctrl+1~5` 切换前五个标签页，`Ctrl+,` 打开设置
 
 ### v0.5.2 (2026-02-15)
 
@@ -167,7 +197,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.5.2.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.0.exe`。
 
 安装过程支持：
 - 自定义安装目录
@@ -234,6 +264,7 @@ QuickStart/
 │   │   ├── Notes/       # 记录界面 + 工作区下拉菜单
 │   │   ├── Todo/        # 清单界面
 │   │   ├── Translator/  # 翻译界面
+│   │   ├── Clipboard/   # 剪贴板界面
 │   │   ├── Settings/    # 设置界面
 │   │   └── Layout/      # 标题栏、导航栏
 │   ├── stores/          # Zustand 状态管理
@@ -265,6 +296,12 @@ QuickStart/
 清单存储目录/             # 全局清单（不随工作区切换）
 ├── 2026-02-08.json
 ├── 2026-02-09.json
+└── ...
+
+剪贴板存储目录/           # 剪贴板历史（文本+图片）
+├── clipboard.json        # 剪贴板元数据索引
+├── img_1708012345678.png # 自动保存的图片文件
+├── img_1708012345679.png
 └── ...
 ```
 

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useNoteStore } from '../../stores/noteStore'
 import {
-  ChevronDown, Plus, Check, X, Pencil, Trash2, AlertTriangle
+  ChevronDown, Plus, Check, X, Pencil, Trash2, RotateCcw
 } from 'lucide-react'
 
 const WS_COLORS = [
@@ -12,7 +12,15 @@ const WS_COLORS = [
 ]
 
 const DROPDOWN_MIN_W = 220
-const DELETE_COUNTDOWN = 5
+const UNDO_DURATION = 30 // seconds
+
+interface UndoToast {
+  wsId: string
+  wsName: string
+  timer: ReturnType<typeof setTimeout>
+  remaining: number
+  intervalId: ReturnType<typeof setInterval>
+}
 
 export default function WorkspaceDropdown() {
   const workspaces = useSettingsStore((s) => s.workspaces)
@@ -31,24 +39,25 @@ export default function WorkspaceDropdown() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameText, setRenameText] = useState('')
 
-  // Delete state: countdown-based confirmation
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [deleteCountdown, setDeleteCountdown] = useState(DELETE_COUNTDOWN)
-  const deleteTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Undo toast state for 30s countdown delete
+  const [undoToast, setUndoToast] = useState<UndoToast | null>(null)
+  // Temporarily removed workspace (for undo)
+  const [removedWs, setRemovedWs] = useState<{ id: string; name: string; color: string; folderName: string } | null>(null)
 
   const btnRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
 
-  // ── Cleanup delete timer on unmount ──
-  const cancelDelete = useCallback(() => {
-    if (deleteTimerRef.current) { clearInterval(deleteTimerRef.current); deleteTimerRef.current = null }
-    setDeleteTarget(null)
-    setDeleteCountdown(DELETE_COUNTDOWN)
-  }, [])
-
-  useEffect(() => cancelDelete, [cancelDelete])
+  // Cleanup undo toast on unmount
+  useEffect(() => {
+    return () => {
+      if (undoToast) {
+        clearTimeout(undoToast.timer)
+        clearInterval(undoToast.intervalId)
+      }
+    }
+  }, [undoToast])
 
   // Close on outside click
   useEffect(() => {
@@ -59,12 +68,11 @@ export default function WorkspaceDropdown() {
         setOpen(false)
         setAdding(false)
         setRenamingId(null)
-        cancelDelete()
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [open, cancelDelete])
+  }, [open])
 
   useEffect(() => {
     if (open) loadWorkspaces()
@@ -104,35 +112,77 @@ export default function WorkspaceDropdown() {
     if (res.success) { setRenamingId(null); setRenameText(''); await loadWorkspaces() }
   }
 
-  // ── Initiate delete with countdown ──
-  const startDelete = (wsId: string) => {
-    cancelDelete()
-    setDeleteTarget(wsId)
-    setDeleteCountdown(DELETE_COUNTDOWN)
-    deleteTimerRef.current = setInterval(() => {
-      setDeleteCountdown((prev) => {
-        if (prev <= 1) {
-          if (deleteTimerRef.current) clearInterval(deleteTimerRef.current)
-          deleteTimerRef.current = null
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-  }
+  // ── Soft delete with 30s undo countdown ──
+  const handleSoftDelete = useCallback(async (wsId: string) => {
+    // Protect: cannot delete if only one workspace left
+    if (workspaces.length <= 1) return
 
-  // ── Execute delete ──
-  const executeDelete = async (wsId: string) => {
-    cancelDelete()
-    const res = await window.api.workspace.delete(wsId)
-    if (res.success) {
-      await loadWorkspaces()
-      if (wsId === activeId) {
-        const list = await window.api.workspace.list()
-        if (list.length > 0) { await setActive(list[0].id); clearEditor(); await loadNotes() }
+    const ws = workspaces.find(w => w.id === wsId)
+    if (!ws) return
+
+    // Cancel previous undo if any
+    if (undoToast) {
+      clearTimeout(undoToast.timer)
+      clearInterval(undoToast.intervalId)
+      // Execute previous pending delete
+      if (removedWs) {
+        await window.api.workspace.delete(removedWs.id)
       }
     }
-  }
+
+    // Store removed workspace for potential restore
+    setRemovedWs({ id: ws.id, name: ws.name, color: ws.color, folderName: ws.folderName })
+
+    // If deleting active workspace, switch to another
+    if (wsId === activeId) {
+      const otherWs = workspaces.find(w => w.id !== wsId)
+      if (otherWs) {
+        await setActive(otherWs.id)
+        clearEditor()
+        await loadNotes()
+      }
+    }
+
+    // Start countdown
+    let remaining = UNDO_DURATION
+    const intervalId = setInterval(() => {
+      remaining -= 1
+      setUndoToast(prev => prev ? { ...prev, remaining } : null)
+    }, 1000)
+
+    const timer = setTimeout(async () => {
+      clearInterval(intervalId)
+      await window.api.workspace.delete(wsId)
+      setUndoToast(null)
+      setRemovedWs(null)
+      await loadWorkspaces()
+    }, UNDO_DURATION * 1000)
+
+    setUndoToast({ wsId, wsName: ws.name, timer, remaining, intervalId })
+    setOpen(false)
+  }, [workspaces, undoToast, removedWs, activeId, setActive, clearEditor, loadNotes, loadWorkspaces])
+
+  // ── Undo delete ──
+  const handleUndo = useCallback(async () => {
+    if (!undoToast || !removedWs) return
+    clearTimeout(undoToast.timer)
+    clearInterval(undoToast.intervalId)
+    setUndoToast(null)
+    setRemovedWs(null)
+    // No need to restore - workspace was never actually deleted
+    await loadWorkspaces()
+  }, [undoToast, removedWs, loadWorkspaces])
+
+  // ── Force delete now (dismiss toast) ──
+  const handleForceDelete = useCallback(async () => {
+    if (!undoToast || !removedWs) return
+    clearTimeout(undoToast.timer)
+    clearInterval(undoToast.intervalId)
+    await window.api.workspace.delete(removedWs.id)
+    setUndoToast(null)
+    setRemovedWs(null)
+    await loadWorkspaces()
+  }, [undoToast, removedWs, loadWorkspaces])
 
   // ── Dropdown position: right-aligned ──
   const [pos, setPos] = useState({ top: 0, right: 0 })
@@ -151,9 +201,6 @@ export default function WorkspaceDropdown() {
       return () => window.removeEventListener('resize', recalcPos)
     }
   }, [open, recalcPos])
-
-  // ── Helper: find ws name for delete confirm ──
-  const deleteWsName = deleteTarget ? workspaces.find((w) => w.id === deleteTarget)?.name || '' : ''
 
   return (
     <>
@@ -200,7 +247,7 @@ export default function WorkspaceDropdown() {
         >
           {/* ═══ Workspace list ═══ */}
           <div style={{ padding: '6px', maxHeight: '220px', overflowY: 'auto' }}>
-            {workspaces.map((ws) => {
+            {workspaces.filter(ws => !removedWs || ws.id !== removedWs.id).map((ws) => {
               const isActive = ws.id === activeId
               const isRenaming = renamingId === ws.id
 
@@ -240,30 +287,26 @@ export default function WorkspaceDropdown() {
                     </span>
                   )}
 
-                  {isActive && !isRenaming && (
-                    <Check size={12} className="text-violet-500 flex-shrink-0" />
-                  )}
-
                   {/* Hover actions: rename + delete */}
                   {!isRenaming && (
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          setRenamingId(ws.id); setRenameText(ws.name); cancelDelete()
+                          setRenamingId(ws.id); setRenameText(ws.name)
                         }}
                         className="w-6 h-6 rounded-md flex items-center justify-center text-zinc-400 hover:text-violet-500 hover:bg-violet-500/10 transition-all"
                         title="重命名"
                       >
                         <Pencil size={10} />
                       </button>
-                      {ws.id !== 'default' && (
+                      {ws.id !== 'default' && workspaces.length > 1 && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            startDelete(ws.id); setRenamingId(null)
+                            handleSoftDelete(ws.id); setRenamingId(null)
                           }}
-                          className="w-6 h-6 rounded-md flex items-center justify-center text-zinc-300 hover:text-zinc-500 hover:bg-zinc-500/8 transition-all"
+                          className="w-6 h-6 rounded-md flex items-center justify-center text-zinc-300 hover:text-red-500 hover:bg-red-500/10 transition-all"
                           title="删除"
                         >
                           <Trash2 size={10} />
@@ -294,68 +337,11 @@ export default function WorkspaceDropdown() {
             })}
           </div>
 
-          {/* ═══ Delete confirmation card ═══ */}
-          {deleteTarget && (
-            <div
-              style={{
-                margin: '0 6px 4px',
-                padding: '10px 12px',
-                borderRadius: '10px',
-                background: 'rgba(239,68,68,0.04)',
-                border: '1px solid rgba(239,68,68,0.12)',
-                animation: 'wsDropIn 120ms ease forwards',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-start gap-2 mb-2.5">
-                <AlertTriangle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold text-red-600 leading-tight">
-                    删除工作区「{deleteWsName}」?
-                  </p>
-                  <p className="text-[9px] text-red-400 mt-1 leading-relaxed">
-                    将同时删除本地对应的所有记录文件
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={cancelDelete}
-                  className="flex-1 text-[10px] font-semibold rounded-lg transition-all text-zinc-500 hover:bg-zinc-500/8"
-                  style={{
-                    padding: '6px 0',
-                    border: '1px solid rgba(0,0,0,0.06)',
-                    background: 'rgba(255,255,255,0.6)',
-                  }}
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => executeDelete(deleteTarget)}
-                  disabled={deleteCountdown > 0}
-                  className="flex-1 text-[10px] font-bold rounded-lg transition-all"
-                  style={{
-                    padding: '6px 0',
-                    border: 'none',
-                    background: deleteCountdown > 0
-                      ? 'rgba(239,68,68,0.08)'
-                      : 'rgba(239,68,68,0.90)',
-                    color: deleteCountdown > 0 ? '#f87171' : '#ffffff',
-                    cursor: deleteCountdown > 0 ? 'not-allowed' : 'pointer',
-                    opacity: deleteCountdown > 0 ? 0.7 : 1,
-                  }}
-                >
-                  {deleteCountdown > 0 ? `请等待 (${deleteCountdown}s)` : '确认删除'}
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* ═══ Divider + Add workspace ═══ */}
           <div style={{ padding: '4px 6px 6px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
             {!adding ? (
               <button
-                onClick={() => { setAdding(true); setRenamingId(null); cancelDelete() }}
+                onClick={() => { setAdding(true); setRenamingId(null) }}
                 className="w-full flex items-center gap-2 text-[11px] font-semibold text-violet-500 active:scale-[0.98] transition-all"
                 style={{ padding: '8px 10px', borderRadius: '8px' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.06)' }}
@@ -461,6 +447,74 @@ export default function WorkspaceDropdown() {
             @keyframes wsDropIn {
               from { opacity: 0; transform: translateY(-6px) scale(0.97); }
               to   { opacity: 1; transform: translateY(0) scale(1); }
+            }
+          `}</style>
+        </div>,
+        document.body
+      )}
+
+      {/* ═══ Undo Delete Toast (Portal) ═══ */}
+      {undoToast && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 24,
+            transform: 'translateX(-50%)',
+            width: 'min(420px, calc(100% - 32px))',
+            background: 'rgba(255,255,255,0.92)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            borderRadius: 16,
+            border: '1px solid rgba(196,181,253,0.5)',
+            boxShadow: '0 8px 32px rgba(139,92,246,0.18), 0 2px 8px rgba(139,92,246,0.08)',
+            padding: '14px 16px 12px',
+            overflow: 'hidden',
+            animation: 'undoSlideIn 280ms cubic-bezier(0.16,1,0.3,1)',
+            zIndex: 10000,
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.12)' }}>
+              <Trash2 size={14} className="text-violet-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] text-zinc-700 font-medium">
+                工作区已移除
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-0.5 truncate">
+                「{undoToast.wsName}」· {undoToast.remaining}s 后永久删除
+              </p>
+            </div>
+            <button
+              onClick={handleUndo}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold text-violet-500 cursor-pointer transition-all hover:text-violet-400"
+            >
+              <RotateCcw size={12} /> 撤销
+            </button>
+            <button
+              onClick={handleForceDelete}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-zinc-400 cursor-pointer transition-colors hover:text-violet-600 hover:bg-violet-500/10"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              height: 2,
+              borderRadius: '0 2px 2px 0',
+              background: 'linear-gradient(90deg, #a78bfa, #e879f9)',
+              width: `${(undoToast.remaining / UNDO_DURATION) * 100}%`,
+              transition: 'width 1s linear',
+            }}
+          />
+          <style>{`
+            @keyframes undoSlideIn {
+              from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+              to   { opacity: 1; transform: translateX(-50%) translateY(0); }
             }
           `}</style>
         </div>,

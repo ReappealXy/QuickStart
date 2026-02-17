@@ -170,6 +170,15 @@ export default function NotesTab() {
     setTimeout(() => titleRef.current?.focus(), 50)
   }, [clearEditor])
 
+  // ── Cancel editing → collapse editor ──
+  const handleCancelEdit = useCallback(() => {
+    clearEditor()
+    setPastedImages([])
+    setBrowseMode(false)
+    setIsFocused(false)
+    setStatusDropdownOpen(false)
+  }, [clearEditor])
+
   // ── Paste handler ──
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
@@ -207,7 +216,7 @@ export default function NotesTab() {
   // ── Keyboard shortcut ──
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleSave() }
-    if (e.key === 'Escape' && editingId) { e.preventDefault(); handleNewNote() }
+    if (e.key === 'Escape' && editingId) { e.preventDefault(); handleCancelEdit() }
   }
 
   // ── Save: create or update ──
@@ -531,7 +540,7 @@ export default function NotesTab() {
               </span>
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={handleNewNote}
+                  onClick={handleCancelEdit}
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 hover:text-red-500 transition-all"
                   title="取消编辑 (Esc)"
                 >

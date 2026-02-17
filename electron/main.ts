@@ -12,7 +12,7 @@ import {
   net,
   dialog
 } from 'electron'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
 import {
@@ -25,7 +25,7 @@ import {
   copyFileSync,
   unlinkSync
 } from 'fs'
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, createHash } from 'crypto'
 
 // ============================================================
 // Custom Protocol — register BEFORE app.ready
@@ -635,6 +635,167 @@ function rebuildTrayMenu(): void {
       }
     ])
   )
+}
+
+// ============================================================
+// Clipboard History Engine
+// ============================================================
+interface ClipboardItem {
+  id: string
+  type: 'text' | 'image'
+  content: string
+  preview: string
+  timestamp: number
+  imagePath?: string
+}
+
+let clipboardHistory: ClipboardItem[] = []
+let lastClipText = ''
+let lastClipImgHash = ''
+let clipMonitorTimer: ReturnType<typeof setInterval> | null = null
+let clipSaveTimer: ReturnType<typeof setTimeout> | null = null
+let isWritingBack = false
+
+const MAX_CLIP_ITEMS = 500
+const MAX_TEXT_STORE = 10000
+
+function getClipboardStorageDir(): string {
+  const cfg = readConfig() as Record<string, unknown>
+  const custom = cfg.clipboardStoragePath as string | undefined
+  const dir = custom || join(app.getPath('userData'), 'clipboard_storage')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function getClipHistoryPath(): string {
+  return join(getClipboardStorageDir(), 'clipboard_history.json')
+}
+
+function loadClipHistory(): void {
+  clipboardHistory = safeReadJSON<ClipboardItem[]>(getClipHistoryPath(), [])
+}
+
+function saveClipHistoryToDisk(): void {
+  safeWriteJSON(getClipHistoryPath(), clipboardHistory)
+}
+
+function scheduleClipSave(): void {
+  if (clipSaveTimer) return
+  clipSaveTimer = setTimeout(() => {
+    clipSaveTimer = null
+    saveClipHistoryToDisk()
+  }, 2000)
+}
+
+function addClipItem(item: ClipboardItem): void {
+  // Deduplicate: remove identical text entries
+  if (item.type === 'text') {
+    clipboardHistory = clipboardHistory.filter(
+      i => !(i.type === 'text' && i.content === item.content)
+    )
+  }
+  clipboardHistory.unshift(item)
+  // Trim excess and delete orphan image files
+  if (clipboardHistory.length > MAX_CLIP_ITEMS) {
+    const removed = clipboardHistory.splice(MAX_CLIP_ITEMS)
+    const storageDir = getClipboardStorageDir()
+    for (const r of removed) {
+      if (r.imagePath) {
+        try { unlinkSync(join(storageDir, r.imagePath)) } catch {}
+      }
+    }
+  }
+  scheduleClipSave()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('clipboard:newItem', item)
+  }
+}
+
+function startClipboardMonitor(): void {
+  loadClipHistory()
+  // Seed trackers with current clipboard state so we don't re-capture existing content
+  try {
+    lastClipText = clipboard.readText() || ''
+    const img = clipboard.readImage()
+    if (!img.isEmpty()) {
+      lastClipImgHash = createHash('md5').update(img.toPNG()).digest('hex')
+    }
+  } catch {}
+
+  clipMonitorTimer = setInterval(() => {
+    if (isWritingBack) return
+    try {
+      // 1. Check for image content
+      const img = clipboard.readImage()
+      if (!img.isEmpty()) {
+        const buf = img.toPNG()
+        const hash = createHash('md5').update(buf).digest('hex')
+        if (hash !== lastClipImgHash) {
+          lastClipImgHash = hash
+          lastClipText = ''
+          const fileName = `clip_${Date.now()}.png`
+          writeFileSync(join(getClipboardStorageDir(), fileName), buf)
+          // Higher-res fallback thumbnail (400px wide) for list preview
+          const sz = img.getSize()
+          const tw = Math.min(400, sz.width)
+          const th = Math.max(1, Math.round(sz.height * (tw / Math.max(sz.width, 1))))
+          const thumb = sz.width > 400 ? img.resize({ width: tw, height: th }) : img
+          addClipItem({
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+            type: 'image',
+            content: '',
+            preview: thumb.toDataURL(),
+            timestamp: Date.now(),
+            imagePath: fileName
+          })
+        }
+        return
+      }
+
+      // 2. Check for text content
+      let text = clipboard.readText() || ''
+      // iconv-lite fallback for garbled text (Windows GBK edge case)
+      if (text && /\ufffd/.test(text)) {
+        try {
+          const iconv = require('iconv-lite')
+          for (const enc of ['gbk', 'gb2312', 'big5']) {
+            try {
+              const raw = clipboard.readBuffer('text/plain')
+              if (raw && raw.length > 0) {
+                const decoded = iconv.decode(raw, enc)
+                if (decoded && !/\ufffd/.test(decoded)) { text = decoded; break }
+              }
+            } catch {}
+          }
+        } catch {}
+      }
+
+      if (text && text.trim() && text !== lastClipText) {
+        lastClipText = text
+        lastClipImgHash = ''
+        const content = text.length > MAX_TEXT_STORE
+          ? text.substring(0, MAX_TEXT_STORE) + '…'
+          : text
+        addClipItem({
+          id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+          type: 'text',
+          content,
+          preview: text.substring(0, 200),
+          timestamp: Date.now(),
+        })
+      }
+    } catch (err) {
+      console.error('[ClipboardMonitor]', err)
+    }
+  }, 1000)
+}
+
+function stopClipboardMonitor(): void {
+  if (clipMonitorTimer) { clearInterval(clipMonitorTimer); clipMonitorTimer = null }
+  if (clipSaveTimer) {
+    clearTimeout(clipSaveTimer); clipSaveTimer = null
+    saveClipHistoryToDisk()
+  }
 }
 
 // ============================================================
@@ -1339,21 +1500,28 @@ function setupIPC(): void {
     try {
       if (wsId === 'default') return { success: false, error: '不能删除默认工作区' }
       const cfg = readConfig()
+      // Protect: cannot delete if only one workspace left
+      if (cfg.workspaces.length <= 1) return { success: false, error: '至少需要保留一个工作区' }
+
       const ws = cfg.workspaces.find((w) => w.id === wsId)
       cfg.workspaces = cfg.workspaces.filter((w) => w.id !== wsId)
       if (cfg.activeWorkspaceId === wsId) cfg.activeWorkspaceId = 'default'
       writeConfig(cfg)
-      // Backup workspace folder to temp
+
+      // Backup workspace folder and then delete
       if (ws) {
         const wsDir = join(getWorkspacesRoot(), ws.folderName)
         if (existsSync(wsDir)) {
+          // Backup recursively using cpSync
           const backupDir = join(tmpdir(), `quickstart-ws-${ws.folderName}-${Date.now()}`)
-          mkdirSync(backupDir, { recursive: true })
           try {
-            for (const f of readdirSync(wsDir)) {
-              copyFileSync(join(wsDir, f), join(backupDir, f))
-            }
-          } catch {}
+            const { cpSync, rmSync } = require('fs')
+            cpSync(wsDir, backupDir, { recursive: true, force: true })
+            // Now delete the original folder
+            rmSync(wsDir, { recursive: true, force: true })
+          } catch (backupErr) {
+            console.error('Workspace backup/delete error:', backupErr)
+          }
         }
       }
       return { success: true }
@@ -1365,24 +1533,91 @@ function setupIPC(): void {
     return getWorkspacesRoot()
   })
 
-  ipcMain.handle('storage:setRootPath', async (_e, newPath: string | null) => {
+  ipcMain.handle('storage:setRootPath', async (_e, newPath: string | null, migrate: boolean = true) => {
     try {
       const cfg = readConfig()
       const oldRoot = getWorkspacesRoot()
+      const targetRoot = newPath || join(app.getPath('documents'), 'QuickStart')
+
+      // Normalize paths for comparison
+      const normOld = oldRoot.replace(/[\\/]+$/, '').toLowerCase()
+      const normTarget = targetRoot.replace(/[\\/]+$/, '').toLowerCase()
+
+      // Skip if same path
+      if (normOld === normTarget) {
+        return { success: true, oldRoot, newRoot: targetRoot, migrated: false }
+      }
+
+      // Check for subdirectory relationship
+      const isSubdir = normTarget.startsWith(normOld + '\\') || normTarget.startsWith(normOld + '/')
+      const isParent = normOld.startsWith(normTarget + '\\') || normOld.startsWith(normTarget + '/')
+
+      // Validate target path is writable
+      if (!existsSync(targetRoot)) {
+        mkdirSync(targetRoot, { recursive: true })
+      }
+      // Test write permission
+      const testFile = join(targetRoot, '.write-test')
+      writeFileSync(testFile, 'test')
+      unlinkSync(testFile)
+
+      const { cpSync, rmSync } = require('fs')
+      let didMigrate = false
+
+      if (migrate && existsSync(oldRoot)) {
+        if (isSubdir) {
+          // Target is subdirectory of source: move workspace folders
+          const targetBasename = basename(targetRoot)
+          for (const ws of cfg.workspaces) {
+            const srcDir = join(oldRoot, ws.folderName)
+            if (existsSync(srcDir) && ws.folderName.toLowerCase() !== targetBasename.toLowerCase()) {
+              const destDir = join(targetRoot, ws.folderName)
+              cpSync(srcDir, destDir, { recursive: true, force: true })
+              rmSync(srcDir, { recursive: true, force: true })
+            }
+          }
+          didMigrate = true
+        } else if (isParent) {
+          // Source is subdirectory of target: move workspace folders up
+          for (const ws of cfg.workspaces) {
+            const srcDir = join(oldRoot, ws.folderName)
+            const destDir = join(targetRoot, ws.folderName)
+            if (existsSync(srcDir) && !existsSync(destDir)) {
+              cpSync(srcDir, destDir, { recursive: true, force: true })
+            }
+          }
+          rmSync(oldRoot, { recursive: true, force: true })
+          didMigrate = true
+        } else {
+          // Normal case: different paths
+          for (const ws of cfg.workspaces) {
+            const srcDir = join(oldRoot, ws.folderName)
+            const destDir = join(targetRoot, ws.folderName)
+            if (existsSync(srcDir)) {
+              cpSync(srcDir, destDir, { recursive: true, force: true })
+            }
+          }
+          rmSync(oldRoot, { recursive: true, force: true })
+          didMigrate = true
+        }
+      }
+
+      // Update config
       if (newPath) {
         cfg.rootPath = newPath
       } else {
         delete cfg.rootPath // reset to default
       }
       writeConfig(cfg)
-      const newRoot = getWorkspacesRoot()
+
       // Ensure all workspace folders exist in new root
       for (const ws of cfg.workspaces) {
-        const dir = join(newRoot, ws.folderName)
+        const dir = join(targetRoot, ws.folderName)
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
         ensureWsStructure(ws.id)
       }
-      return { success: true, oldRoot, newRoot }
+
+      return { success: true, oldRoot, newRoot: targetRoot, migrated: didMigrate }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
@@ -1391,19 +1626,73 @@ function setupIPC(): void {
     return getTodosDir()
   })
 
-  ipcMain.handle('storage:setTodosPath', async (_e, newPath: string | null) => {
+  ipcMain.handle('storage:setTodosPath', async (_e, newPath: string | null, migrate: boolean = true) => {
     try {
       const cfg = readConfig() as Record<string,unknown>
       const oldDir = getTodosDir()
+      const targetDir = newPath || join(app.getPath('documents'), 'QuickStart', 'Todos')
+
+      // Normalize paths for comparison
+      const normOld = oldDir.replace(/[\\/]+$/, '').toLowerCase()
+      const normTarget = targetDir.replace(/[\\/]+$/, '').toLowerCase()
+
+      // Skip if same path
+      if (normOld === normTarget) {
+        return { success: true, oldPath: oldDir, newPath: targetDir, migrated: false }
+      }
+
+      // Check for subdirectory relationship
+      const isSubdir = normTarget.startsWith(normOld + '\\') || normTarget.startsWith(normOld + '/')
+      const isParent = normOld.startsWith(normTarget + '\\') || normOld.startsWith(normTarget + '/')
+
+      // Validate target path is writable
+      if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true })
+      }
+
+      const { cpSync, rmSync } = require('fs')
+      let didMigrate = false
+
+      if (migrate && existsSync(oldDir)) {
+        if (isSubdir) {
+          // Target is subdirectory of source
+          const targetBasename = basename(targetDir)
+          for (const item of readdirSync(oldDir)) {
+            if (item.toLowerCase() === targetBasename.toLowerCase()) continue
+            const src = join(oldDir, item)
+            const dest = join(targetDir, item)
+            cpSync(src, dest, { recursive: true, force: true })
+            rmSync(src, { recursive: true, force: true })
+          }
+          didMigrate = true
+        } else if (isParent) {
+          // Source is subdirectory of target
+          for (const item of readdirSync(oldDir)) {
+            const src = join(oldDir, item)
+            const dest = join(targetDir, item)
+            if (!existsSync(dest)) {
+              cpSync(src, dest, { recursive: true, force: true })
+            }
+          }
+          rmSync(oldDir, { recursive: true, force: true })
+          didMigrate = true
+        } else {
+          // Normal case
+          cpSync(oldDir, targetDir, { recursive: true, force: true })
+          rmSync(oldDir, { recursive: true, force: true })
+          didMigrate = true
+        }
+      }
+
+      // Update config
       if (newPath) {
         cfg.todosPath = newPath
       } else {
         delete cfg.todosPath // reset to default
       }
       writeConfig(cfg as ConfigV3)
-      const newDir = getTodosDir()
-      if (!existsSync(newDir)) mkdirSync(newDir, { recursive: true })
-      return { success: true, oldPath: oldDir, newPath: newDir }
+
+      return { success: true, oldPath: oldDir, newPath: targetDir, migrated: didMigrate }
     } catch (err) { return { success: false, error: String(err) } }
   })
 
@@ -1834,6 +2123,151 @@ function setupIPC(): void {
 
   // Legacy compat - no-op for old resetPath
   ipcMain.handle('attachments:resetPath', async () => ({ success: true, migratedCount: 0 }))
+
+  // ---- Clipboard History ----
+  ipcMain.handle('clipboard:getHistory', (_e, limit: number = 100, offset: number = 0) => {
+    return { items: clipboardHistory.slice(offset, offset + limit), total: clipboardHistory.length }
+  })
+
+  ipcMain.handle('clipboard:writeBack', async (_e, itemId: string) => {
+    const item = clipboardHistory.find(i => i.id === itemId)
+    if (!item) return { success: false, error: 'not found' }
+    isWritingBack = true
+    try {
+      if (item.type === 'text') {
+        clipboard.writeText(item.content)
+        lastClipText = item.content
+      } else if (item.type === 'image' && item.imagePath) {
+        const imgPath = join(getClipboardStorageDir(), item.imagePath)
+        if (existsSync(imgPath)) {
+          const img = nativeImage.createFromPath(imgPath)
+          clipboard.writeImage(img)
+          lastClipImgHash = createHash('md5').update(img.toPNG()).digest('hex')
+        }
+      }
+      return { success: true }
+    } finally {
+      setTimeout(() => { isWritingBack = false }, 1500)
+    }
+  })
+
+  ipcMain.handle('clipboard:deleteItem', (_e, itemId: string) => {
+    const idx = clipboardHistory.findIndex(i => i.id === itemId)
+    if (idx < 0) return { success: false }
+    const [removed] = clipboardHistory.splice(idx, 1)
+    if (removed.imagePath) {
+      try { unlinkSync(join(getClipboardStorageDir(), removed.imagePath)) } catch {}
+    }
+    scheduleClipSave()
+    return { success: true }
+  })
+
+  ipcMain.handle('clipboard:updateItem', (_e, itemId: string, content: string) => {
+    const item = clipboardHistory.find(i => i.id === itemId)
+    if (!item || item.type !== 'text') return { success: false }
+    item.content = content
+    item.preview = content.substring(0, 200)
+    scheduleClipSave()
+    return { success: true }
+  })
+
+  ipcMain.handle('clipboard:clearHistory', () => {
+    const storageDir = getClipboardStorageDir()
+    for (const item of clipboardHistory) {
+      if (item.imagePath) {
+        try { unlinkSync(join(storageDir, item.imagePath)) } catch {}
+      }
+    }
+    clipboardHistory = []
+    saveClipHistoryToDisk()
+    return { success: true }
+  })
+
+  ipcMain.handle('clipboard:getStoragePath', () => getClipboardStorageDir())
+
+  ipcMain.handle('clipboard:setStoragePath', (_e, newPath: string | null, migrate: boolean = true) => {
+    try {
+      const cfg = readConfig() as Record<string, unknown>
+      const oldDir = getClipboardStorageDir()
+      const targetDir = newPath || join(app.getPath('documents'), 'QuickStart', 'Clipboard')
+
+      // Normalize paths for comparison
+      const normOld = oldDir.replace(/[\\/]+$/, '').toLowerCase()
+      const normTarget = targetDir.replace(/[\\/]+$/, '').toLowerCase()
+
+      // Skip if same path
+      if (normOld === normTarget) {
+        return { success: true, path: targetDir, migrated: false }
+      }
+
+      // Check for subdirectory relationship
+      const isSubdir = normTarget.startsWith(normOld + '\\') || normTarget.startsWith(normOld + '/')
+      const isParent = normOld.startsWith(normTarget + '\\') || normOld.startsWith(normTarget + '/')
+
+      // Ensure target exists
+      if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true })
+
+      const { cpSync, rmSync } = require('fs')
+      let didMigrate = false
+
+      if (migrate && existsSync(oldDir)) {
+        if (isSubdir) {
+          // Target is subdirectory of source: move files from old to new (excluding the target folder itself)
+          const targetBasename = basename(targetDir)
+          for (const item of readdirSync(oldDir)) {
+            if (item.toLowerCase() === targetBasename.toLowerCase()) continue // skip the target folder
+            const src = join(oldDir, item)
+            const dest = join(targetDir, item)
+            cpSync(src, dest, { recursive: true, force: true })
+            rmSync(src, { recursive: true, force: true })
+          }
+          didMigrate = true
+        } else if (isParent) {
+          // Source is subdirectory of target: just move files up, then delete old folder
+          for (const item of readdirSync(oldDir)) {
+            const src = join(oldDir, item)
+            const dest = join(targetDir, item)
+            if (!existsSync(dest)) {
+              cpSync(src, dest, { recursive: true, force: true })
+            }
+          }
+          rmSync(oldDir, { recursive: true, force: true })
+          didMigrate = true
+        } else {
+          // Normal case: different paths
+          cpSync(oldDir, targetDir, { recursive: true, force: true })
+          rmSync(oldDir, { recursive: true, force: true })
+          didMigrate = true
+        }
+      }
+
+      // Update config
+      if (newPath) {
+        cfg.clipboardStoragePath = newPath
+      } else {
+        delete cfg.clipboardStoragePath
+      }
+      writeConfig(cfg as ConfigV3)
+      loadClipHistory()
+      return { success: true, path: getClipboardStorageDir(), migrated: didMigrate }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  ipcMain.handle('clipboard:openStorageDir', () => {
+    const { shell } = require('electron')
+    shell.openPath(getClipboardStorageDir())
+    return { success: true }
+  })
+
+  ipcMain.handle('clipboard:openInFolder', (_e, imagePath: string) => {
+    const { shell } = require('electron')
+    const fullPath = join(getClipboardStorageDir(), imagePath)
+    if (existsSync(fullPath)) {
+      shell.showItemInFolder(fullPath)
+      return { success: true }
+    }
+    return { success: false, error: 'File not found' }
+  })
 }
 
 // ============================================================
@@ -1843,39 +2277,46 @@ app.whenReady().then(async () => {
   // ── Register quickstart:// protocol to serve local files ──
   // quickstart://media/img_xxx.png  →  dynamic attachments dir / img_xxx.png
   protocol.handle('quickstart', (request) => {
-    const url = new URL(request.url)
-    const host = url.hostname            // "media"
-    const fileName = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    try {
+      const url = new URL(request.url)
+      const host = url.hostname
+      const fileName = decodeURIComponent(url.pathname.replace(/^\//, ''))
 
-    let filePath: string
-    if (host === 'media') {
-      // Search active workspace first, then all workspaces
-      const cfg = readConfig()
-      filePath = join(getWsAttachDir(cfg.activeWorkspaceId || 'default'), fileName)
-      if (!existsSync(filePath)) {
-        // Search all workspaces
-        for (const ws of cfg.workspaces) {
-          const alt = join(getWsAttachDir(ws.id), fileName)
-          if (existsSync(alt)) { filePath = alt; break }
+      let filePath: string
+      if (host === 'media') {
+        const cfg = readConfig()
+        filePath = join(getWsAttachDir(cfg.activeWorkspaceId || 'default'), fileName)
+        if (!existsSync(filePath)) {
+          for (const ws of cfg.workspaces) {
+            const alt = join(getWsAttachDir(ws.id), fileName)
+            if (existsSync(alt)) { filePath = alt; break }
+          }
         }
+        if (!existsSync(filePath)) {
+          const legacyDir = join(getDataDir(), 'workspaces', 'default', 'attachments')
+          const fallback = join(legacyDir, fileName)
+          if (existsSync(fallback)) filePath = fallback
+        }
+      } else if (host === 'clipboard') {
+        filePath = join(getClipboardStorageDir(), fileName)
+      } else {
+        filePath = join(getDataDir(), host, fileName)
       }
-      // Final fallback: legacy default location
-      if (!existsSync(filePath)) {
-        const legacyDir = join(getDataDir(), 'workspaces', 'default', 'attachments')
-        const fallback = join(legacyDir, fileName)
-        if (existsSync(fallback)) filePath = fallback
-      }
-    } else {
-      filePath = join(getDataDir(), host, fileName)
-    }
 
-    return net.fetch(pathToFileURL(filePath).toString())
+      if (!existsSync(filePath)) {
+        return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
+      }
+      return net.fetch(pathToFileURL(filePath).toString())
+    } catch {
+      return new Response('Internal error', { status: 500, headers: { 'Content-Type': 'text/plain' } })
+    }
   })
 
   ensureDataDirs()
   createWindow()
   await createTray()
   setupIPC()
+  startClipboardMonitor()
 
   // Sync auto-start with system on launch
   try {
@@ -1899,6 +2340,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('will-quit', () => {
+  stopClipboardMonitor()
   globalShortcut.unregisterAll()
 })
 

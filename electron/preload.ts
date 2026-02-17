@@ -56,9 +56,9 @@ contextBridge.exposeInMainWorld('api', {
   storage: {
     selectDir: (title: string) => ipcRenderer.invoke('storage:selectDir', title),
     getRootPath: () => ipcRenderer.invoke('storage:getRootPath'),
-    setRootPath: (newPath: string | null) => ipcRenderer.invoke('storage:setRootPath', newPath),
+    setRootPath: (newPath: string | null, migrate?: boolean) => ipcRenderer.invoke('storage:setRootPath', newPath, migrate ?? true),
     getTodosPath: () => ipcRenderer.invoke('storage:getTodosPath'),
-    setTodosPath: (newPath: string | null) => ipcRenderer.invoke('storage:setTodosPath', newPath),
+    setTodosPath: (newPath: string | null, migrate?: boolean) => ipcRenderer.invoke('storage:setTodosPath', newPath, migrate ?? true),
     clearNotes: () => ipcRenderer.invoke('storage:clearNotes'),
     clearTodos: () => ipcRenderer.invoke('storage:clearTodos'),
   },
@@ -101,6 +101,28 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_e: unknown, enabled: boolean) => callback(enabled)
       ipcRenderer.on('config:autoStartChanged', handler)
       return () => ipcRenderer.removeListener('config:autoStartChanged', handler)
+    }
+  },
+  clipboard: {
+    getHistory: (limit?: number, offset?: number) =>
+      ipcRenderer.invoke('clipboard:getHistory', limit, offset),
+    writeBack: (itemId: string) =>
+      ipcRenderer.invoke('clipboard:writeBack', itemId),
+    deleteItem: (itemId: string) =>
+      ipcRenderer.invoke('clipboard:deleteItem', itemId),
+    updateItem: (itemId: string, content: string) =>
+      ipcRenderer.invoke('clipboard:updateItem', itemId, content),
+    openInFolder: (imagePath: string) =>
+      ipcRenderer.invoke('clipboard:openInFolder', imagePath),
+    clearHistory: () => ipcRenderer.invoke('clipboard:clearHistory'),
+    getStoragePath: () => ipcRenderer.invoke('clipboard:getStoragePath'),
+    setStoragePath: (newPath: string | null, migrate?: boolean) =>
+      ipcRenderer.invoke('clipboard:setStoragePath', newPath, migrate ?? true),
+    openStorageDir: () => ipcRenderer.invoke('clipboard:openStorageDir'),
+    onNewItem: (callback: (item: { id: string; type: string; content: string; preview: string; timestamp: number; imagePath?: string }) => void) => {
+      const handler = (_e: unknown, item: { id: string; type: string; content: string; preview: string; timestamp: number; imagePath?: string }) => callback(item)
+      ipcRenderer.on('clipboard:newItem', handler)
+      return () => ipcRenderer.removeListener('clipboard:newItem', handler)
     }
   },
   shell: {

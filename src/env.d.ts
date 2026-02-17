@@ -52,9 +52,9 @@ interface Window {
     storage: {
       selectDir(title: string): Promise<{ success: boolean; path?: string; canceled?: boolean }>
       getRootPath(): Promise<string>
-      setRootPath(newPath: string | null): Promise<{ success: boolean; oldRoot?: string; newRoot?: string; error?: string }>
+      setRootPath(newPath: string | null, migrate?: boolean): Promise<{ success: boolean; oldRoot?: string; newRoot?: string; migrated?: boolean; error?: string }>
       getTodosPath(): Promise<string>
-      setTodosPath(newPath: string | null): Promise<{ success: boolean; oldPath?: string; newPath?: string; error?: string }>
+      setTodosPath(newPath: string | null, migrate?: boolean): Promise<{ success: boolean; oldPath?: string; newPath?: string; migrated?: boolean; error?: string }>
       clearNotes(): Promise<{ success: boolean; cleared?: number; backupDir?: string; error?: string }>
       clearTodos(): Promise<{ success: boolean; cleared?: number; backupDir?: string; error?: string }>
     }
@@ -87,10 +87,31 @@ interface Window {
       relaunch(): void
       onAutoStartChanged(callback: (enabled: boolean) => void): () => void
     }
+    clipboard: {
+      getHistory(limit?: number, offset?: number): Promise<{ items: ClipboardHistoryItem[]; total: number }>
+      writeBack(itemId: string): Promise<{ success: boolean; error?: string }>
+      deleteItem(itemId: string): Promise<{ success: boolean }>
+      updateItem(itemId: string, content: string): Promise<{ success: boolean }>
+      openInFolder(imagePath: string): Promise<{ success: boolean; error?: string }>
+      clearHistory(): Promise<{ success: boolean }>
+      getStoragePath(): Promise<string>
+      setStoragePath(path: string | null, migrate?: boolean): Promise<{ success: boolean; path?: string; migrated?: boolean; error?: string }>
+      openStorageDir(): Promise<{ success: boolean }>
+      onNewItem(callback: (item: ClipboardHistoryItem) => void): () => void
+    }
     shell: {
       openExternal(url: string): Promise<void>
     }
   }
+}
+
+interface ClipboardHistoryItem {
+  id: string
+  type: 'text' | 'image'
+  content: string
+  preview: string
+  timestamp: number
+  imagePath?: string
 }
 
 type AINodePurpose = 'chat' | 'translate' | 'both'

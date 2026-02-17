@@ -5,6 +5,7 @@ import NotesTab from './components/Notes/NotesTab'
 import TodoTab from './components/Todo/TodoTab'
 import TranslatorTab from './components/Translator/TranslatorTab'
 import AITab from './components/AI/AITab'
+import ClipboardTab from './components/Clipboard/ClipboardTab'
 import SettingsTab from './components/Settings/SettingsTab'
 import { useSettingsStore } from './stores/settingsStore'
 
@@ -21,9 +22,9 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') window.api.window.hide()
-      if (e.ctrlKey && e.key >= '1' && e.key <= '4') {
+      if (e.ctrlKey && e.key >= '1' && e.key <= '5') {
         e.preventDefault()
-        const tabs = ['notes', 'todo', 'translate', 'ai'] as const
+        const tabs = ['notes', 'todo', 'translate', 'ai', 'clipboard'] as const
         useSettingsStore.getState().setActiveTab(tabs[parseInt(e.key) - 1])
       }
       if (e.ctrlKey && e.key === ',') {
@@ -48,6 +49,7 @@ export default function App() {
         {activeTab === 'todo' && <TodoTab />}
         {activeTab === 'translate' && <TranslatorTab />}
         {activeTab === 'ai' && <AITab />}
+        {activeTab === 'clipboard' && <ClipboardTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>

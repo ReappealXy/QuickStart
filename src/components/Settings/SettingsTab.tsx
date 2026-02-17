@@ -6,97 +6,51 @@ import {
   FolderOpen, RotateCcw, Loader2, FolderSync, Sparkles,
   Eye, EyeOff, Save, ChevronDown, Plus, GripVertical,
   Pencil, Trash2, Power, X, RefreshCw, Settings2, AlertTriangle,
-  Download, Calendar, FileDown, FileText, ListChecks
+  Download, Calendar, FileDown, FileText, ListChecks, ClipboardList
 } from 'lucide-react'
 
-/* ─── Danger Clear Button with 10s countdown ─── */
-function DangerClearButton({ label, onConfirm, disabled }: {
+/* ─── Clear Undo Toast Type ─── */
+interface ClearUndoToast {
+  type: 'notes' | 'todos' | 'clipboard'
   label: string
-  onConfirm: () => void
+  timer: ReturnType<typeof setTimeout>
+  remaining: number
+  intervalId: ReturnType<typeof setInterval>
+}
+
+/* ─── Simple Clear Button ─── */
+function ClearButton({ label, onClick, disabled }: {
+  label: string
+  onClick: () => void
   disabled?: boolean
 }) {
-  const [phase, setPhase] = useState<'idle' | 'counting' | 'ready'>('idle')
-  const [countdown, setCountdown] = useState(10)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const cleanup = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-    setPhase('idle')
-    setCountdown(10)
-  }, [])
-
-  // Cleanup on unmount
-  useEffect(() => cleanup, [cleanup])
-
-  const handleClick = () => {
-    if (phase === 'idle') {
-      setPhase('counting')
-      setCountdown(10)
-      timerRef.current = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            if (timerRef.current) clearInterval(timerRef.current)
-            timerRef.current = null
-            setPhase('ready')
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-    } else if (phase === 'ready') {
-      cleanup()
-      onConfirm()
-    }
-  }
-
   return (
-    <div className="flex items-center gap-1.5">
-      <button
-        onClick={handleClick}
-        disabled={disabled || phase === 'counting'}
-        className="flex items-center gap-1 text-[11px] font-medium transition-all"
-        style={{
-          padding: '6px 12px',
-          borderRadius: '8px',
-          border: phase === 'ready'
-            ? '1px solid rgba(239,68,68,0.35)'
-            : phase === 'counting'
-              ? '1px solid rgba(239,68,68,0.20)'
-              : '1px solid rgba(239,68,68,0.12)',
-          background: phase === 'ready'
-            ? 'rgba(239,68,68,0.08)'
-            : phase === 'counting'
-              ? 'rgba(239,68,68,0.04)'
-              : 'transparent',
-          color: phase === 'idle' ? '#ef4444' : phase === 'counting' ? '#f87171' : '#dc2626',
-          opacity: disabled ? 0.4 : phase === 'counting' ? 0.7 : 1,
-          cursor: disabled ? 'default' : phase === 'counting' ? 'not-allowed' : 'pointer',
-          animation: phase === 'counting' ? 'pulse 1.5s ease-in-out infinite' : undefined,
-        }}
-        onMouseDown={(e) => { if (phase !== 'counting') (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
-        onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
-      >
-        {phase === 'ready' ? <AlertTriangle size={10} /> : <Trash2 size={10} />}
-        {phase === 'idle' ? label : phase === 'counting' ? `请等待 (${countdown}s)` : '确认清空'}
-      </button>
-      {phase !== 'idle' && (
-        <button
-          onClick={cleanup}
-          className="text-[10px] font-medium transition-all"
-          style={{ padding: '4px 8px', borderRadius: '6px', color: '#a1a1aa' }}
-          onMouseEnter={(e) => e.currentTarget.style.color = '#52525b'}
-          onMouseLeave={(e) => e.currentTarget.style.color = '#a1a1aa'}
-        >
-          取消
-        </button>
-      )}
-    </div>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1 text-[11px] font-medium transition-all"
+      style={{
+        padding: '6px 12px',
+        borderRadius: '8px',
+        border: '1px solid rgba(239,68,68,0.12)',
+        background: 'transparent',
+        color: '#ef4444',
+        opacity: disabled ? 0.4 : 1,
+        cursor: disabled ? 'default' : 'pointer',
+      }}
+      onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = 'rgba(239,68,68,0.06)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)' } }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.12)' }}
+      onMouseDown={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
+      onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+    >
+      <Trash2 size={10} />
+      {label}
+    </button>
   )
 }
 
 const FIXED_SHORTCUTS = [
-  { desc: '切换标签页', keys: ['Ctrl', '1~4'] },
+  { desc: '切换标签页', keys: ['Ctrl', '1~5'] },
   { desc: '保存记录', keys: ['Ctrl', 'Enter'] },
   { desc: '隐藏窗口', keys: ['Esc'] }
 ]
@@ -1123,16 +1077,104 @@ export default function SettingsTab() {
   // ── Storage paths ──
   const [rootPath, setRootPath] = useState('')
   const [todosPath, setTodosPath] = useState('')
+  const [clipboardPath, setClipboardPath] = useState('')
   const [migrating, setMigrating] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [confirmRootChange, setConfirmRootChange] = useState<{ newPath: string } | null>(null)
   const [confirmTodosChange, setConfirmTodosChange] = useState<{ newPath: string } | null>(null)
+  const [confirmClipboardChange, setConfirmClipboardChange] = useState<{ newPath: string } | null>(null)
+
+  // ── Clear undo toast state ──
+  const [clearUndoToast, setClearUndoToast] = useState<ClearUndoToast | null>(null)
+  const CLEAR_UNDO_DURATION = 30
+
+  // Cleanup undo toast on unmount
+  useEffect(() => {
+    return () => {
+      if (clearUndoToast) {
+        clearTimeout(clearUndoToast.timer)
+        clearInterval(clearUndoToast.intervalId)
+      }
+    }
+  }, [clearUndoToast])
+
+  // Handle soft clear (show undo toast, delay actual deletion)
+  const handleSoftClear = (type: 'notes' | 'todos' | 'clipboard') => {
+    // Clear any existing toast first
+    if (clearUndoToast) {
+      clearTimeout(clearUndoToast.timer)
+      clearInterval(clearUndoToast.intervalId)
+      // Execute the previous pending clear immediately
+      executeClear(clearUndoToast.type)
+    }
+
+    const labels = { notes: '记录', todos: '清单', clipboard: '剪贴板' }
+
+    // Start countdown interval
+    let remaining = CLEAR_UNDO_DURATION
+    const intervalId = setInterval(() => {
+      remaining -= 1
+      setClearUndoToast(prev => prev ? { ...prev, remaining } : null)
+    }, 1000)
+
+    // Set timer for actual deletion
+    const timer = setTimeout(() => {
+      clearInterval(intervalId)
+      executeClear(type)
+      setClearUndoToast(null)
+    }, CLEAR_UNDO_DURATION * 1000)
+
+    setClearUndoToast({
+      type,
+      label: labels[type],
+      timer,
+      remaining: CLEAR_UNDO_DURATION,
+      intervalId,
+    })
+  }
+
+  // Execute actual clear operation
+  const executeClear = async (type: 'notes' | 'todos' | 'clipboard') => {
+    if (type === 'notes') {
+      const res = await window.api.storage.clearNotes()
+      if (res.success) setToast(`记录数据已清空 (${res.cleared} 个文件)`)
+      else setToast('清空失败: ' + (res.error || '未知错误'))
+    } else if (type === 'todos') {
+      const res = await window.api.storage.clearTodos()
+      if (res.success) setToast(`清单数据已清空 (${res.cleared} 个文件)`)
+      else setToast('清空失败: ' + (res.error || '未知错误'))
+    } else if (type === 'clipboard') {
+      const res = await window.api.clipboard.clearHistory()
+      if (res.success) setToast('剪贴板历史已清空')
+      else setToast('清空失败')
+    }
+  }
+
+  // Handle undo (cancel pending clear)
+  const handleUndoClear = () => {
+    if (!clearUndoToast) return
+    clearTimeout(clearUndoToast.timer)
+    clearInterval(clearUndoToast.intervalId)
+    setClearUndoToast(null)
+    setToast('已撤销清空操作')
+  }
+
+  // Force clear immediately (dismiss undo toast)
+  const handleForceClear = () => {
+    if (!clearUndoToast) return
+    clearTimeout(clearUndoToast.timer)
+    clearInterval(clearUndoToast.intervalId)
+    executeClear(clearUndoToast.type)
+    setClearUndoToast(null)
+  }
 
   const loadPaths = useCallback(async () => {
     const rp = await window.api.storage.getRootPath()
     const tp = await window.api.storage.getTodosPath()
+    const cp = await window.api.clipboard.getStoragePath()
     setRootPath(rp)
     setTodosPath(tp)
+    setClipboardPath(cp)
   }, [])
 
   useEffect(() => { loadPaths() }, [loadPaths])
@@ -1153,10 +1195,10 @@ export default function SettingsTab() {
     if (!confirmRootChange?.newPath) return
     setMigrating(true); setConfirmRootChange(null)
     try {
-      const res = await window.api.storage.setRootPath(confirmRootChange.newPath)
+      const res = await window.api.storage.setRootPath(confirmRootChange.newPath, true)
       if (res.success) {
         await loadPaths()
-        setToast('记录存储目录已更新')
+        setToast(res.migrated ? '数据已迁移至新目录' : '记录存储目录已更新')
       } else {
         setToast('更改失败: ' + (res.error || '未知错误'))
       }
@@ -1187,10 +1229,10 @@ export default function SettingsTab() {
     if (!confirmTodosChange?.newPath) return
     setMigrating(true); setConfirmTodosChange(null)
     try {
-      const res = await window.api.storage.setTodosPath(confirmTodosChange.newPath)
+      const res = await window.api.storage.setTodosPath(confirmTodosChange.newPath, true)
       if (res.success) {
         await loadPaths()
-        setToast('清单存储目录已更新')
+        setToast(res.migrated ? '清单数据已迁移至新目录' : '清单存储目录已更新')
       } else {
         setToast('更改失败: ' + (res.error || '未知错误'))
       }
@@ -1204,6 +1246,40 @@ export default function SettingsTab() {
       if (res.success) {
         await loadPaths()
         setToast('已恢复默认清单存储目录')
+      } else {
+        setToast('重置失败: ' + (res.error || '未知错误'))
+      }
+    } finally { setMigrating(false) }
+  }
+
+  // --- Clipboard storage dir ---
+  const handleSelectClipboardDir = async () => {
+    const result = await window.api.storage.selectDir('选择剪贴板存储目录')
+    if (!result.success || !result.path) return
+    setConfirmClipboardChange({ newPath: result.path })
+  }
+
+  const handleConfirmClipboardChange = async () => {
+    if (!confirmClipboardChange?.newPath) return
+    setMigrating(true); setConfirmClipboardChange(null)
+    try {
+      const res = await window.api.clipboard.setStoragePath(confirmClipboardChange.newPath, true)
+      if (res.success) {
+        await loadPaths()
+        setToast(res.migrated ? '剪贴板数据已迁移至新目录' : '剪贴板存储目录已更新')
+      } else {
+        setToast('更改失败: ' + (res.error || '未知错误'))
+      }
+    } finally { setMigrating(false) }
+  }
+
+  const handleResetClipboard = async () => {
+    setMigrating(true)
+    try {
+      const res = await window.api.clipboard.setStoragePath(null)
+      if (res.success) {
+        await loadPaths()
+        setToast('已恢复默认剪贴板存储目录')
       } else {
         setToast('重置失败: ' + (res.error || '未知错误'))
       }
@@ -1299,14 +1375,10 @@ export default function SettingsTab() {
               恢复默认
             </button>
             <div className="flex-1" />
-            <DangerClearButton
+            <ClearButton
               label="清空记录"
-              disabled={migrating}
-              onConfirm={async () => {
-                const res = await window.api.storage.clearNotes()
-                if (res.success) setToast(`记录数据已清空 (${res.cleared} 个文件)`)
-                else setToast('清空失败: ' + (res.error || '未知错误'))
-              }}
+              disabled={migrating || !!clearUndoToast}
+              onClick={() => handleSoftClear('notes')}
             />
           </div>
         </div>
@@ -1361,14 +1433,68 @@ export default function SettingsTab() {
               恢复默认
             </button>
             <div className="flex-1" />
-            <DangerClearButton
+            <ClearButton
               label="清空清单"
+              disabled={migrating || !!clearUndoToast}
+              onClick={() => handleSoftClear('todos')}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ━━━ Clipboard Storage ━━━ */}
+      <section className="animate-fadeInUp mb-4">
+        <h3 className="text-[9px] font-extrabold uppercase tracking-[0.15em] text-zinc-400/60 mb-2 px-0.5 flex items-center gap-1.5">
+          <ClipboardList size={9} />
+          剪贴板存储
+        </h3>
+        <div style={glassCard}>
+          <div style={{ padding: '14px 16px 12px' }}>
+            <div className="flex items-center gap-2 mb-1">
+              <FolderOpen size={13} style={{ color: '#8b5cf6' }} className="flex-shrink-0" />
+              <span className="text-[12px] font-semibold text-zinc-700">剪贴板数据目录</span>
+            </div>
+            <p className="text-[9px] mb-2.5" style={{ color: '#a1a1aa' }}>
+              文本记录与图片文件均存储在此目录下
+            </p>
+            <div
+              className="font-mono text-[10px] break-all leading-relaxed select-all"
+              style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(15,23,42,0.05)', color: '#64748b', border: '1px solid rgba(0,0,0,0.03)' }}
+              title={clipboardPath}
+            >
+              {shortenPath(clipboardPath)}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap" style={{ padding: '10px 16px', borderTop: '1px solid rgba(0,0,0,0.03)' }}>
+            <button
+              onClick={handleSelectClipboardDir}
               disabled={migrating}
-              onConfirm={async () => {
-                const res = await window.api.storage.clearTodos()
-                if (res.success) setToast(`清单数据已清空 (${res.cleared} 个文件)`)
-                else setToast('清空失败: ' + (res.error || '未知错误'))
-              }}
+              className="flex items-center gap-1.5 text-[11px] font-bold transition-all"
+              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(139,92,246,0.2)', background: 'rgba(139,92,246,0.04)', color: '#8b5cf6', opacity: migrating ? 0.5 : 1 }}
+              onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
+              onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+            >
+              {migrating ? <Loader2 size={11} className="animate-spin" /> : <FolderSync size={11} />}
+              更改目录
+            </button>
+            <button
+              onClick={handleResetClipboard}
+              disabled={migrating}
+              className="flex items-center gap-1.5 text-[11px] font-medium transition-all"
+              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.06)', color: '#a1a1aa', opacity: migrating ? 0.5 : 1 }}
+              onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.97)' }}
+              onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
+            >
+              <RotateCcw size={10} />
+              恢复默认
+            </button>
+            <div className="flex-1" />
+            <ClearButton
+              label="清空剪贴板"
+              disabled={migrating || !!clearUndoToast}
+              onClick={() => handleSoftClear('clipboard')}
             />
           </div>
         </div>
@@ -1404,9 +1530,9 @@ export default function SettingsTab() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] font-bold text-zinc-700 dark:text-zinc-200">QuickStart</p>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.5.1 · 桌面快捷效率工具</p>
+            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.6.0 · 桌面快捷效率工具</p>
             <button
-              onClick={() => window.api.shell.openExternal('https://github.com/ReappealXy')}
+              onClick={() => window.api.shell.openExternal('https://github.com/ReappealXy/QuickStart')}
               className="inline-flex items-center gap-1 mt-1 text-[9px] font-medium transition-all cursor-pointer"
               style={{ color: '#8b5cf6', background: 'none', border: 'none', padding: 0 }}
               onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
@@ -1420,11 +1546,11 @@ export default function SettingsTab() {
       </section>
 
       {/* ====== Confirm Dir Change Dialog ====== */}
-      {(confirmRootChange || confirmTodosChange) && (
+      {(confirmRootChange || confirmTodosChange || confirmClipboardChange) && (
         <div
           className="fixed inset-0 z-[999] flex items-center justify-center animate-fadeIn"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
-          onClick={() => { setConfirmRootChange(null); setConfirmTodosChange(null) }}
+          onClick={() => { setConfirmRootChange(null); setConfirmTodosChange(null); setConfirmClipboardChange(null) }}
         >
           <div
             className="animate-scaleIn"
@@ -1440,15 +1566,17 @@ export default function SettingsTab() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
-              <FolderSync size={20} style={{ color: confirmRootChange ? '#8b5cf6' : '#f59e0b' }} />
+              <FolderSync size={20} style={{ color: confirmClipboardChange ? '#8b5cf6' : confirmRootChange ? '#8b5cf6' : '#f59e0b' }} />
               <div>
                 <p className="text-[13px] font-bold text-zinc-800">
-                  {confirmRootChange ? '更改记录存储目录' : '更改清单存储目录'}
+                  {confirmRootChange ? '更改记录存储目录' : confirmTodosChange ? '更改清单存储目录' : '更改剪贴板存储目录'}
                 </p>
                 <p className="text-[10px] text-zinc-400 mt-0.5">
                   {confirmRootChange
                     ? '工作区子文件夹将在新目录下自动创建'
-                    : '清单数据将读写到新目录'}
+                    : confirmTodosChange
+                      ? '清单数据将读写到新目录'
+                      : '剪贴板历史将读写到新目录'}
                 </p>
               </div>
             </div>
@@ -1463,21 +1591,21 @@ export default function SettingsTab() {
                 border: '1px solid rgba(0,0,0,0.03)',
               }}
             >
-              {confirmRootChange?.newPath || confirmTodosChange?.newPath}
+              {confirmRootChange?.newPath || confirmTodosChange?.newPath || confirmClipboardChange?.newPath}
             </div>
 
             <div className="flex flex-col gap-2">
               <button
-                onClick={confirmRootChange ? handleConfirmRootChange : handleConfirmTodosChange}
+                onClick={confirmRootChange ? handleConfirmRootChange : confirmTodosChange ? handleConfirmTodosChange : handleConfirmClipboardChange}
                 className="w-full text-[12px] font-bold rounded-xl text-white transition-all"
                 style={{
                   padding: '10px',
-                  background: confirmRootChange
-                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                    : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                  boxShadow: confirmRootChange
-                    ? '0 3px 12px -2px rgba(102,126,234,0.4)'
-                    : '0 3px 12px -2px rgba(245,158,11,0.4)',
+                  background: confirmTodosChange
+                    ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  boxShadow: confirmTodosChange
+                    ? '0 3px 12px -2px rgba(245,158,11,0.4)'
+                    : '0 3px 12px -2px rgba(102,126,234,0.4)',
                 }}
                 onMouseDown={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.98)' }}
                 onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = '' }}
@@ -1486,7 +1614,7 @@ export default function SettingsTab() {
                 确认更改
               </button>
               <button
-                onClick={() => { setConfirmRootChange(null); setConfirmTodosChange(null) }}
+                onClick={() => { setConfirmRootChange(null); setConfirmTodosChange(null); setConfirmClipboardChange(null) }}
                 className="w-full py-1.5 text-[11px] text-zinc-400 font-medium transition-all hover:text-zinc-600"
               >
                 取消
@@ -1496,12 +1624,99 @@ export default function SettingsTab() {
         </div>
       )}
 
+      {/* ====== Clear Undo Toast (matching NotesTab style) ====== */}
+      {clearUndoToast && (
+        <div
+          className="absolute"
+          style={{
+            bottom: '24px',
+            left: 'var(--container-padding)',
+            right: 'var(--container-padding)',
+            zIndex: 9990,
+            borderRadius: '16px',
+            background: isDark ? 'rgba(30,30,33,0.88)' : 'rgba(255,255,255,0.85)',
+            backdropFilter: 'blur(16px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+            boxShadow: isDark
+              ? '0 12px 40px -8px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)'
+              : '0 12px 40px -8px rgba(80,60,140,0.16), 0 0 0 1px rgba(0,0,0,0.04)',
+            padding: '14px 16px 10px',
+            overflow: 'hidden',
+            animation: 'undoSlideIn 280ms cubic-bezier(0.16,1,0.3,1)',
+          }}
+        >
+          <style>{`
+            @keyframes undoSlideIn {
+              from { opacity: 0; transform: translateY(12px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+          <div className="flex items-center gap-3">
+            {/* Trash icon */}
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)' }}
+            >
+              <Trash2 size={14} style={{ color: isDark ? '#f87171' : '#ef4444' }} />
+            </div>
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-zinc-600 dark:text-zinc-300 truncate">
+                {clearUndoToast.label}已移除
+              </p>
+              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5 truncate">
+                {clearUndoToast.remaining}s 后永久删除
+              </p>
+            </div>
+            {/* Undo pill */}
+            <button
+              onClick={handleUndoClear}
+              className="flex items-center gap-1.5 flex-shrink-0 font-bold transition-all duration-150"
+              style={{
+                padding: '7px 14px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                background: isDark ? 'rgba(139,92,246,0.14)' : 'rgba(139,92,246,0.10)',
+                color: isDark ? '#c4b5fd' : '#7c3aed',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.24)' : 'rgba(139,92,246,0.18)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.14)' : 'rgba(139,92,246,0.10)' }}
+            >
+              <RotateCcw size={12} /> 撤销
+            </button>
+            {/* Dismiss X */}
+            <button
+              onClick={handleForceClear}
+              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-150"
+              style={{ color: isDark ? '#52525b' : '#a1a1aa' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = isDark ? '#a1a1aa' : '#71717a'; e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = isDark ? '#52525b' : '#a1a1aa'; e.currentTarget.style.background = 'transparent' }}
+              title="立即删除"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          {/* Countdown progress bar */}
+          <div style={{ margin: '10px -16px -10px', height: '3px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+            <div
+              style={{
+                height: '100%',
+                borderRadius: '0 2px 2px 0',
+                background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+                width: `${(clearUndoToast.remaining / CLEAR_UNDO_DURATION) * 100}%`,
+                transition: 'width 1s linear',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ====== Toast ====== */}
       {toast && (
         <div
           className="fixed z-[1000] animate-fadeInUp"
           style={{
-            bottom: '16px',
+            bottom: clearUndoToast ? '90px' : '16px',
             left: 'var(--container-padding)',
             right: 'var(--container-padding)',
             borderRadius: '12px',
@@ -1511,6 +1726,7 @@ export default function SettingsTab() {
             boxShadow: isDark
               ? '0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)'
               : '0 8px 32px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
+            transition: 'bottom 0.3s ease',
           }}
         >
           <div className="flex items-center gap-2">

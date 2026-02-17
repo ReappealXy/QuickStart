@@ -75,6 +75,7 @@ interface Window {
       readFileContent(filePath: string): Promise<FileReadResult>
       translate(text: string, from: string, to: string): Promise<{ success: boolean; error?: string }>
       hasTranslateNode(): Promise<boolean>
+      exportSession(sessionId: string, format: 'md' | 'pdf'): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
     }
     window: {
       hide(): void

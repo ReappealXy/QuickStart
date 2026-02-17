@@ -2000,6 +2000,88 @@ function setupIPC(): void {
     } catch (err) { return { success: false, error: String(err) } }
   })
 
+  // ---- AI Export Session ----
+  ipcMain.handle('ai:exportSession', async (_e, sessionId: string, format: 'md' | 'pdf') => {
+    if (!mainWindow) return { success: false, error: 'no window' }
+    try {
+      const sessionPath = join(sessionsDir, `${sessionId}.json`)
+      if (!existsSync(sessionPath)) return { success: false, error: '找不到该对话' }
+
+      const session = safeReadJSON<{ id: string; title: string; messages: Array<{ role: string; content: string; timestamp?: number }> }>(sessionPath, { id: '', title: '', messages: [] })
+      if (!session.messages || session.messages.length === 0) return { success: false, error: '对话内容为空' }
+
+      const defaultName = `QuickStart_AI_${session.title || sessionId}`.replace(/[\\/:*?"<>|]/g, '_')
+
+      if (format === 'md') {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: '导出 Markdown',
+          defaultPath: `${defaultName}.md`,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (result.canceled || !result.filePath) return { success: false, canceled: true }
+
+        let mdContent = `# ${session.title || '新对话'}\n\n`
+        for (const msg of session.messages) {
+          const roleLabel = msg.role === 'user' ? '**用户**' : '**AI**'
+          mdContent += `${roleLabel}:\n\n${msg.content}\n\n---\n\n`
+        }
+        writeFileSync(result.filePath, mdContent.trim(), 'utf-8')
+        return { success: true, filePath: result.filePath }
+      }
+
+      if (format === 'pdf') {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: '导出 PDF',
+          defaultPath: `${defaultName}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        })
+        if (result.canceled || !result.filePath) return { success: false, canceled: true }
+
+        const MarkdownIt = require('markdown-it')
+        const md = new MarkdownIt({ html: true, breaks: true, linkify: true })
+
+        let mdContent = `# ${session.title || '新对话'}\n\n`
+        for (const msg of session.messages) {
+          const roleLabel = msg.role === 'user' ? '**用户**' : '**AI**'
+          mdContent += `${roleLabel}:\n\n${msg.content}\n\n---\n\n`
+        }
+
+        const htmlBody = md.render(mdContent.trim())
+        const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.8; font-size: 14px; max-width: 700px; margin: 0 auto; }
+          h1 { font-size: 22px; color: #6d28d9; border-bottom: 3px solid #8b5cf6; padding-bottom: 12px; margin-bottom: 24px; }
+          strong { color: #7c3aed; }
+          hr { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+          code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+          pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; }
+          pre code { background: none; padding: 0; color: inherit; }
+          blockquote { border-left: 3px solid #8b5cf6; padding-left: 16px; color: #6b7280; margin: 16px 0; }
+          a { color: #7c3aed; }
+          ul, ol { padding-left: 24px; }
+          li { margin-bottom: 4px; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+          th { background: #f9fafb; }
+        </style></head><body>${htmlBody}</body></html>`
+
+        const pdfWin = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { contextIsolation: true } })
+        await pdfWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`)
+        const pdfData = await pdfWin.webContents.printToPDF({
+          printBackground: true,
+          marginsType: 0,
+          pageSize: 'A4',
+        })
+        pdfWin.destroy()
+        writeFileSync(result.filePath, pdfData)
+        return { success: true, filePath: result.filePath }
+      }
+
+      return { success: false, error: '不支持的格式' }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
   // ---- AI Translate ----
 
   ipcMain.handle('ai:hasTranslateNode', () => {

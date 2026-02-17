@@ -1,7 +1,7 @@
 ﻿QuickStart 桌面快捷效率工具
 软件用户许可协议 (EULA)
 
-版本：0.6.1
+版本：0.6.2
 作者：ReappealXy
 项目主页：https://github.com/ReappealXy/QuickStart
 

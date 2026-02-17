@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('api', {
     readFileContent: (filePath: string) => ipcRenderer.invoke('ai:readFileContent', filePath),
     translate: (text: string, from: string, to: string) => ipcRenderer.invoke('ai:translate', text, from, to),
     hasTranslateNode: () => ipcRenderer.invoke('ai:hasTranslateNode'),
+    exportSession: (sessionId: string, format: 'md' | 'pdf') => ipcRenderer.invoke('ai:exportSession', sessionId, format),
     onToken: (callback: (data: { content?: string; reasoning?: string; done: boolean; error?: string }) => void) => {
       const handler = (_e: unknown, data: { content?: string; reasoning?: string; done: boolean; error?: string }) => callback(data)
       ipcRenderer.on('ai:token', handler)

@@ -3,10 +3,14 @@ import { createPortal } from 'react-dom'
 import {
   Bot, ArrowRight, Sparkles, Send, Trash2, User, Loader2,
   ChevronDown, Plus, Clock, X, Paperclip, FileText, Image,
-  MessageSquare, PenLine, ChevronLeft
+  MessageSquare, PenLine, ChevronLeft, Copy, Check, Download
 } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useAIStore } from '../../stores/aiStore'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 /* ────────── Guide (no API key) ────────── */
 
@@ -54,6 +58,25 @@ function GuideView() {
 function SessionSidebar() {
   const { sessions, activeSessionId, showSidebar, toggleSidebar, switchSession, deleteSession, createSession } = useAIStore()
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [exportSession, setExportSession] = useState<{ id: string; title: string; messageCount: number } | null>(null)
+  const [exportToast, setExportToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  const handleExport = async (format: 'md' | 'pdf') => {
+    if (!exportSession) return
+    const sessionId = exportSession.id
+    setExportSession(null)
+    try {
+      const result = await window.api.ai.exportSession(sessionId, format)
+      if (result.success) {
+        setExportToast({ message: `已导出为 ${format.toUpperCase()}`, type: 'success' })
+      } else if (!result.canceled) {
+        setExportToast({ message: result.error || '导出失败', type: 'error' })
+      }
+    } catch {
+      setExportToast({ message: '导出失败', type: 'error' })
+    }
+    setTimeout(() => setExportToast(null), 2000)
+  }
 
   if (!showSidebar) return null
 
@@ -141,7 +164,7 @@ function SessionSidebar() {
                   {s.messageCount} 条消息 · {formatRelTime(s.updatedAt)}
                 </p>
               </div>
-              {/* Delete btn */}
+              {/* Actions */}
               {confirmDeleteId === s.id ? (
                 <div className="flex items-center gap-1">
                   <button
@@ -156,20 +179,147 @@ function SessionSidebar() {
                   >取消</button>
                 </div>
               ) : (
-                <button
-                  className="opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-md transition-all"
-                  style={{ width: '22px', height: '22px', color: '#a1a1aa', flexShrink: 0 }}
-                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id) }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.06)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  <Trash2 size={11} />
-                </button>
+                <div className="flex items-center gap-0.5">
+                  {/* Export btn */}
+                  <button
+                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-md transition-all"
+                    style={{ width: '22px', height: '22px', color: '#a1a1aa', flexShrink: 0 }}
+                    onClick={(e) => { e.stopPropagation(); setExportSession({ id: s.id, title: s.title, messageCount: s.messageCount }); setConfirmDeleteId(null) }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(139,92,246,0.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    title="导出此对话"
+                  >
+                    <Download size={11} />
+                  </button>
+                  {/* Delete btn */}
+                  <button
+                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-md transition-all"
+                    style={{ width: '22px', height: '22px', color: '#a1a1aa', flexShrink: 0 }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id) }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239,68,68,0.06)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
               )}
             </div>
           ))}
         </div>
       </div>
+
+      {/* Export Modal */}
+      {exportSession && (
+        <div
+          className="fixed inset-0 flex items-center justify-center"
+          style={{ zIndex: 10001, background: 'rgba(0,0,0,0.2)', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' }}
+          onClick={() => setExportSession(null)}
+        >
+          <div
+            className="relative"
+            style={{
+              width: '320px',
+              background: 'rgba(255,255,255,0.98)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              borderRadius: '20px',
+              boxShadow: '0 24px 80px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04)',
+              padding: '24px',
+              animation: 'exportModalIn 0.2s ease-out',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <style>{`
+              @keyframes exportModalIn {
+                from { opacity: 0; transform: scale(0.95) translateY(8px); }
+                to { opacity: 1; transform: scale(1) translateY(0); }
+              }
+            `}</style>
+            {/* Close btn */}
+            <button
+              className="absolute flex items-center justify-center rounded-full transition-all"
+              style={{ top: '16px', right: '16px', width: '28px', height: '28px', color: '#a1a1aa' }}
+              onClick={() => setExportSession(null)}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; e.currentTarget.style.color = '#71717a' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#a1a1aa' }}
+            >
+              <X size={16} />
+            </button>
+            {/* Header */}
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#18181b', marginBottom: '4px' }}>导出对话</h3>
+            <p style={{ fontSize: '12px', color: '#a1a1aa', marginBottom: '16px' }}>{exportSession.title || '新对话'} · {exportSession.messageCount} 条消息</p>
+            <p style={{ fontSize: '12px', color: '#71717a', marginBottom: '20px' }}>选择导出格式，内容将包含完整对话</p>
+            {/* Format cards */}
+            <div className="flex gap-3" style={{ marginBottom: '20px' }}>
+              <button
+                className="flex-1 flex flex-col items-center gap-2 rounded-xl transition-all"
+                style={{ padding: '20px 16px', border: '1px solid rgba(139,92,246,0.15)', background: 'rgba(139,92,246,0.02)' }}
+                onClick={() => handleExport('md')}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.3)'; e.currentTarget.style.background = 'rgba(139,92,246,0.06)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.15)'; e.currentTarget.style.background = 'rgba(139,92,246,0.02)' }}
+              >
+                <div className="flex items-center justify-center" style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(139,92,246,0.08)' }}>
+                  <FileText size={20} style={{ color: '#8b5cf6' }} />
+                </div>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#27272a' }}>.md</span>
+                <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Markdown</span>
+              </button>
+              <button
+                className="flex-1 flex flex-col items-center gap-2 rounded-xl transition-all"
+                style={{ padding: '20px 16px', border: '1px solid rgba(239,68,68,0.15)', background: 'rgba(239,68,68,0.02)' }}
+                onClick={() => handleExport('pdf')}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; e.currentTarget.style.background = 'rgba(239,68,68,0.06)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(239,68,68,0.15)'; e.currentTarget.style.background = 'rgba(239,68,68,0.02)' }}
+              >
+                <div className="flex items-center justify-center" style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(239,68,68,0.08)' }}>
+                  <FileText size={20} style={{ color: '#ef4444' }} />
+                </div>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#27272a' }}>.pdf</span>
+                <span style={{ fontSize: '11px', color: '#a1a1aa' }}>PDF 文档</span>
+              </button>
+            </div>
+            {/* Cancel */}
+            <button
+              className="w-full text-center transition-all"
+              style={{ fontSize: '13px', color: '#a1a1aa', padding: '8px' }}
+              onClick={() => setExportSession(null)}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#71717a'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#a1a1aa'}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Export Toast */}
+      {exportToast && (
+        <div
+          className="fixed flex items-center gap-2"
+          style={{
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10002,
+            padding: '10px 18px',
+            borderRadius: '12px',
+            background: exportToast.type === 'success' ? 'rgba(139,92,246,0.95)' : 'rgba(239,68,68,0.95)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            boxShadow: '0 8px 32px -4px rgba(0,0,0,0.2)',
+            animation: 'exportToastSlideIn 0.25s cubic-bezier(0.16,1,0.3,1)',
+          }}
+        >
+          <style>{`
+            @keyframes exportToastSlideIn {
+              from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+              to { opacity: 1; transform: translateX(-50%) translateY(0); }
+            }
+          `}</style>
+          <Check size={14} style={{ color: '#fff' }} />
+          <span style={{ fontSize: '12px', fontWeight: 500, color: '#fff', whiteSpace: 'nowrap' }}>{exportToast.message}</span>
+        </div>
+      )}
     </div>,
     document.body
   )
@@ -270,6 +420,182 @@ function ReasoningBlock({ reasoning }: { reasoning: string }) {
   )
 }
 
+/* ────────── Markdown Renderer ────────── */
+
+function MarkdownContent({ content }: { content: string }) {
+  const [copiedBlock, setCopiedBlock] = useState<number | null>(null)
+  let codeBlockIndex = 0
+
+  const copyCode = async (code: string, index: number) => {
+    await navigator.clipboard.writeText(code)
+    setCopiedBlock(index)
+    setTimeout(() => setCopiedBlock(null), 2000)
+  }
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        // Code blocks with syntax highlighting
+        code({ node, className, children, ...props }) {
+          const match = /language-(\w+)/.exec(className || '')
+          const codeString = String(children).replace(/\n$/, '')
+          const isInline = !match && !codeString.includes('\n')
+          
+          if (isInline) {
+            return (
+              <code
+                className="px-1.5 py-0.5 rounded text-[11px] font-mono"
+                style={{
+                  background: 'rgba(139,92,246,0.08)',
+                  color: '#7c3aed',
+                }}
+                {...props}
+              >
+                {children}
+              </code>
+            )
+          }
+
+          const currentIndex = codeBlockIndex++
+          return (
+            <div className="relative group my-3 rounded-lg overflow-hidden" style={{ background: '#1e1e1e' }}>
+              {/* Header bar */}
+              <div
+                className="flex items-center justify-between px-3 py-1.5"
+                style={{ background: 'rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <span className="text-[10px] font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {match?.[1] || 'code'}
+                </span>
+                <button
+                  onClick={() => copyCode(codeString, currentIndex)}
+                  className="flex items-center gap-1.5 text-[10px] font-medium transition-all rounded-md"
+                  style={{
+                    padding: '4px 10px',
+                    color: copiedBlock === currentIndex ? '#4ade80' : 'rgba(255,255,255,0.6)',
+                    background: copiedBlock === currentIndex ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.06)',
+                  }}
+                  onMouseEnter={(e) => { if (copiedBlock !== currentIndex) { e.currentTarget.style.color = 'rgba(255,255,255,0.9)'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)' } }}
+                  onMouseLeave={(e) => { if (copiedBlock !== currentIndex) { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)' } }}
+                >
+                  {copiedBlock === currentIndex ? <Check size={11} /> : <Copy size={11} />}
+                  <span className="whitespace-nowrap">{copiedBlock === currentIndex ? '已复制' : '复制代码'}</span>
+                </button>
+              </div>
+              <SyntaxHighlighter
+                style={oneDark}
+                language={match?.[1] || 'text'}
+                PreTag="div"
+                customStyle={{
+                  margin: 0,
+                  padding: '12px 14px',
+                  background: 'transparent',
+                  fontSize: '11px',
+                  lineHeight: '1.6',
+                }}
+                codeTagProps={{
+                  style: { fontFamily: 'Consolas, Monaco, "Courier New", monospace' }
+                }}
+              >
+                {codeString}
+              </SyntaxHighlighter>
+            </div>
+          )
+        },
+        // Paragraphs
+        p({ children }) {
+          return <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+        },
+        // Lists
+        ul({ children }) {
+          return <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+        },
+        ol({ children }) {
+          return <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+        },
+        li({ children }) {
+          return <li className="leading-relaxed">{children}</li>
+        },
+        // Blockquote
+        blockquote({ children }) {
+          return (
+            <blockquote
+              className="my-2 pl-3 border-l-2"
+              style={{ borderColor: 'rgba(139,92,246,0.4)', color: '#71717a' }}
+            >
+              {children}
+            </blockquote>
+          )
+        },
+        // Headings
+        h1({ children }) {
+          return <h1 className="text-[15px] font-bold mb-2 mt-3" style={{ color: '#27272a' }}>{children}</h1>
+        },
+        h2({ children }) {
+          return <h2 className="text-[14px] font-bold mb-2 mt-3" style={{ color: '#27272a' }}>{children}</h2>
+        },
+        h3({ children }) {
+          return <h3 className="text-[13px] font-bold mb-2 mt-2" style={{ color: '#27272a' }}>{children}</h3>
+        },
+        // Horizontal rule
+        hr() {
+          return <hr className="my-3 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }} />
+        },
+        // Tables
+        table({ children }) {
+          return (
+            <div className="my-2 overflow-x-auto">
+              <table className="min-w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+                {children}
+              </table>
+            </div>
+          )
+        },
+        th({ children }) {
+          return (
+            <th
+              className="px-2 py-1.5 text-left font-semibold"
+              style={{ background: 'rgba(139,92,246,0.05)', borderBottom: '1px solid rgba(0,0,0,0.08)' }}
+            >
+              {children}
+            </th>
+          )
+        },
+        td({ children }) {
+          return (
+            <td className="px-2 py-1.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+              {children}
+            </td>
+          )
+        },
+        // Links
+        a({ href, children }) {
+          return (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline transition-colors"
+              style={{ color: '#8b5cf6' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#7c3aed'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#8b5cf6'}
+            >
+              {children}
+            </a>
+          )
+        },
+        // Strong / Bold
+        strong({ children }) {
+          return <strong className="font-semibold" style={{ color: '#27272a' }}>{children}</strong>
+        },
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}
+
 /* ────────── Chat Interface ────────── */
 
 function ChatView() {
@@ -283,6 +609,20 @@ function ChatView() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  const copyMessage = async (content: string, msgId: string) => {
+    await navigator.clipboard.writeText(content)
+    setCopiedMsgId(msgId)
+    showToast('复制成功')
+    setTimeout(() => setCopiedMsgId(null), 2000)
+  }
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -424,14 +764,20 @@ function ChatView() {
 
             {/* Bubble */}
             <div
+              className="group relative"
               style={{
                 ...glassCard,
-                padding: '10px 14px',
+                padding: msg.role === 'assistant' ? '14px 16px 10px' : '10px 14px',
                 maxWidth: '85%',
                 ...(msg.role === 'user' ? {
                   background: 'rgba(139,92,246,0.06)',
                   border: '1px solid rgba(139,92,246,0.08)',
-                } : {}),
+                } : {
+                  background: 'rgba(255,255,255,0.60)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  boxShadow: '0 2px 12px -2px rgba(0,0,0,0.06)',
+                }),
               }}
             >
               {/* Attachments in user message */}
@@ -456,20 +802,54 @@ function ChatView() {
 
               {msg.reasoning && <ReasoningBlock reasoning={msg.reasoning} />}
 
-              <div className="text-[12px] leading-relaxed break-words whitespace-pre-wrap" style={{ color: '#3f3f46' }}>
-                {msg.content || (streaming && msg.role === 'assistant' && !msg.content ? '' : msg.content || '(空回复)')}
-                {msg.role === 'assistant' && streaming && !msg.content && messages[messages.length - 1]?.id === msg.id && (
-                  <span className="inline-flex gap-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#f59e0b' }} />
-                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#f59e0b', animationDelay: '0.2s' }} />
-                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#f59e0b', animationDelay: '0.4s' }} />
-                  </span>
+              {/* Message content */}
+              {msg.role === 'assistant' ? (
+                <div className="text-[12px] leading-relaxed" style={{ color: '#27272a' }}>
+                  {msg.content ? (
+                    <MarkdownContent content={msg.content} />
+                  ) : streaming && messages[messages.length - 1]?.id === msg.id ? (
+                    <span className="inline-flex gap-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#f59e0b' }} />
+                      <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#f59e0b', animationDelay: '0.2s' }} />
+                      <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#f59e0b', animationDelay: '0.4s' }} />
+                    </span>
+                  ) : '(空回复)'}
+                </div>
+              ) : (
+                <div className="text-[12px] leading-relaxed break-words whitespace-pre-wrap" style={{ color: '#27272a' }}>
+                  {msg.content}
+                </div>
+              )}
+
+              {/* Footer: timestamp + toolbar for AI messages */}
+              <div
+                className="flex items-center justify-between mt-3 pt-2"
+                style={{ borderTop: msg.role === 'assistant' && msg.content ? '1px solid rgba(0,0,0,0.04)' : 'none' }}
+              >
+                <p className="text-[9px]" style={{ color: '#a1a1aa' }}>
+                  {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+
+                {/* Toolbar for AI messages */}
+                {msg.role === 'assistant' && msg.content && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => copyMessage(msg.content, msg.id)}
+                      className="flex items-center gap-1 text-[10px] font-medium rounded-md transition-all"
+                      style={{
+                        padding: '4px 8px',
+                        background: copiedMsgId === msg.id ? 'rgba(74,222,128,0.1)' : 'transparent',
+                        color: copiedMsgId === msg.id ? '#22c55e' : '#8b5cf6',
+                      }}
+                      onMouseEnter={(e) => { if (copiedMsgId !== msg.id) e.currentTarget.style.background = 'rgba(139,92,246,0.08)' }}
+                      onMouseLeave={(e) => { if (copiedMsgId !== msg.id) e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {copiedMsgId === msg.id ? <Check size={11} /> : <Copy size={11} />}
+                      <span className="whitespace-nowrap">{copiedMsgId === msg.id ? '已复制' : '复制全文'}</span>
+                    </button>
+                  </div>
                 )}
               </div>
-
-              <p className="text-[9px] mt-1" style={{ color: '#d4d4d8' }}>
-                {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-              </p>
             </div>
           </div>
         ))}
@@ -567,6 +947,38 @@ function ChatView() {
 
       {/* Session sidebar (Portal) */}
       <SessionSidebar />
+
+      {/* Toast */}
+      {toast && createPortal(
+        <div
+          className="fixed z-[9999]"
+          style={{
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            background: 'rgba(139,92,246,0.95)',
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: 600,
+            boxShadow: '0 4px 20px -4px rgba(139,92,246,0.4)',
+            animation: 'toastSlideIn 0.25s cubic-bezier(0.16,1,0.3,1)',
+          }}
+        >
+          <style>{`
+            @keyframes toastSlideIn {
+              from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+              to { opacity: 1; transform: translateX(-50%) translateY(0); }
+            }
+          `}</style>
+          <span className="flex items-center gap-1.5">
+            <Check size={13} />
+            {toast}
+          </span>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

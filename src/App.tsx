@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import TitleBar from './components/Layout/TitleBar'
 import TabBar from './components/Layout/TabBar'
 import NotesTab from './components/Notes/NotesTab'
@@ -8,10 +8,56 @@ import AITab from './components/AI/AITab'
 import ClipboardTab from './components/Clipboard/ClipboardTab'
 import SettingsTab from './components/Settings/SettingsTab'
 import { useSettingsStore } from './stores/settingsStore'
+import { useTimerStore, startGlobalTimerTick, stopGlobalTimerTick, setTimerCallbacks } from './stores/timerStore'
+
+function formatTimer(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
 
 export default function App() {
   const activeTab = useSettingsStore((s) => s.activeTab)
   const loadConfig = useSettingsStore((s) => s.loadConfig)
+
+  const timerFinishedModal = useTimerStore((s) => s.timerFinishedModal)
+  const setTimerFinishedModal = useTimerStore((s) => s.setTimerFinishedModal)
+  const activeTimerId = useTimerStore((s) => s.activeTimerId)
+
+  const [, forceUpdate] = useState(0)
+
+  // Setup timer callbacks for updating todo items
+  useEffect(() => {
+    setTimerCallbacks({
+      onTick: () => forceUpdate((n) => n + 1),
+      onFinished: (taskName, duration) => {
+        setTimerFinishedModal({ taskName, duration })
+      },
+      onUpdateTask: async (taskId, taskDate, updates) => {
+        // Load todos for the specific date and update the item
+        const todos = await window.api.todos.load(taskDate)
+        if (todos) {
+          const updated = {
+            ...todos,
+            items: todos.items.map((item: any) =>
+              item.id === taskId ? { ...item, ...updates } : item
+            )
+          }
+          await window.api.todos.save(taskDate, updated)
+        }
+      },
+    })
+  }, [setTimerFinishedModal])
+
+  // Start global timer tick when there's an active timer
+  useEffect(() => {
+    if (activeTimerId) {
+      startGlobalTimerTick()
+    } else {
+      stopGlobalTimerTick()
+    }
+    return () => stopGlobalTimerTick()
+  }, [activeTimerId])
 
   useEffect(() => {
     loadConfig()
@@ -36,6 +82,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  const isDark = document.documentElement.classList.contains('dark')
+
   return (
     <div className="h-full flex flex-col overflow-hidden"
       style={{
@@ -52,6 +100,99 @@ export default function App() {
         {activeTab === 'clipboard' && <ClipboardTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
+
+      {/* Global Timer Finished Modal */}
+      {timerFinishedModal && (
+        <div
+          className="fixed inset-0 flex items-center justify-center"
+          style={{
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.2)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            animation: 'fadeIn 0.25s ease-out',
+          }}
+          onClick={() => setTimerFinishedModal(null)}
+        >
+          <div
+            className="flex flex-col items-center"
+            style={{
+              width: '300px',
+              padding: '28px 24px',
+              borderRadius: '24px',
+              background: isDark ? 'rgba(30, 30, 35, 0.95)' : 'rgba(255, 255, 255, 0.92)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(255, 255, 255, 0.9)',
+              boxShadow: isDark ? '0 16px 48px rgba(0, 0, 0, 0.5)' : '0 16px 48px rgba(0, 0, 0, 0.12)',
+              animation: 'scaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Checkmark Icon */}
+            <div
+              className="flex items-center justify-center rounded-full mb-4"
+              style={{
+                width: '64px',
+                height: '64px',
+                background: 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)',
+                boxShadow: '0 8px 24px rgba(34, 197, 94, 0.35)',
+              }}
+            >
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
+
+            {/* Title */}
+            <h3 className="text-[18px] font-bold mb-2" style={{ color: isDark ? '#fff' : '#1a1a1a' }}>
+              计时结束
+            </h3>
+
+            {/* Task Name */}
+            <p
+              className="text-[14px] text-center mb-1 px-4"
+              style={{
+                color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                maxWidth: '100%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {timerFinishedModal.taskName}
+            </p>
+
+            {/* Duration */}
+            <p className="text-[13px] font-medium mb-6" style={{ color: '#7C4DFF' }}>
+              专注时长：{formatTimer(timerFinishedModal.duration)}
+            </p>
+
+            {/* Button */}
+            <button
+              onClick={() => setTimerFinishedModal(null)}
+              className="w-full flex items-center justify-center text-[15px] font-semibold text-white transition-all duration-200"
+              style={{
+                height: '46px',
+                borderRadius: '14px',
+                background: 'linear-gradient(135deg, #7C4DFF 0%, #9575FF 100%)',
+                boxShadow: '0 2px 12px rgba(124, 77, 255, 0.25)',
+              }}
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.92) translateY(16px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.2-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.3-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -132,6 +132,24 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ## 版本更新
 
+### v0.6.3 (2026-02-18)
+
+<p align="center">
+  <img src="screenshots/timer-modal1.png" width="280" alt="计时器弹窗">
+  <img src="screenshots/timer-modal2.png" width="280" alt="计时器弹窗">
+  <img src="screenshots/timer-finished.png" width="280" alt="计时结束弹窗">
+</p>
+
+- **计时器弹窗重构** —— 全新小米时钟风格的计时器交互弹窗，毛玻璃背景 + 大圆角设计
+- **分段控制器** —— 正计时/倒计时切换采用 iOS 风格的滑动指示器，选中态平滑过渡
+- **圆形拨盘选择器** —— SVG 精准绘制的圆形进度弧线，拖动把手设定倒计时分钟数
+- **滑动开始** —— 正计时模式采用"滑动开始"交互，向右滑动触发计时
+- **快捷时长 Chips** —— 统一规格的胶囊按钮（5/15/25/45分钟），单行显示，等宽布局
+- **倒计时结束弹窗** —— 计时结束时弹出精致的完成弹窗，显示任务名称与专注时长
+- **系统通知** —— 应用不在前台时，计时结束自动触发系统级通知提醒
+- **编辑弹窗按钮优化** —— 取消/确定按钮统一规格（46px 高、14px 圆角），Primary/Secondary 层级清晰，支持 hover/pressed 状态
+- **深色模式适配** —— 计时器弹窗、完成弹窗、编辑弹窗全组件支持深色模式
+
 ### v0.6.2 (2026-02-17)
 
 - **AI 对话导出**：支持将 AI 对话导出为 Markdown (.md) 或 PDF (.pdf) 格式
@@ -207,7 +225,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.2.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.3.exe`。
 
 安装过程支持：
 - 自定义安装目录

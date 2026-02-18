@@ -171,6 +171,9 @@ interface TodoItem {
   order: number
   createdAt: string
   doneAt?: string
+  timerLimit?: number
+  timerSpent?: number
+  completedDuration?: number
 }
 
 interface TodoDay {

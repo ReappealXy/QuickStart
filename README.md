@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.3-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.4-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -132,6 +132,19 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ## 版本更新
 
+### v0.6.4 (2026-02-25)
+
+- **清单计时状态修复** —— 点击暂停后保持为“已暂停”状态，不再误判为“计时结束”
+- **计时零值显示修复** —— 开始后立即暂停时，统一显示标准时长格式，不再出现裸 `0`
+- **计时交互完善** —— 在“开始/暂停”之外补充“结束计时”入口，暂停后可继续或手动结束
+- **清单排序逻辑优化** —— 新建未完成事项始终在未完成区；勾选完成后自动下沉到已完成区
+- **专注时长样式统一** —— 完成态时长标签统一为“专注时长”视觉体系，完成状态增加明确勾选反馈
+- **今日专注统计弹窗** —— 日期栏新增统计入口，支持弹窗查看当日专注总时长 + 各模块时长占比圆饼图
+- **图表交互与排版打磨** —— 饼图标注、模块列表、hover 高亮与弹窗留白重新调整，避免遮挡与拥挤
+- **剪贴板性能优化** —— 剪贴板页默认仅渲染前 100 条记录，降低从 AI 切换到剪贴板时的卡顿
+- **剪贴板头部信息补充** —— 顶部显示“共 X 条，仅展示前 100 条”，明确展示范围
+- **文本预览工具栏重绘** —— 预览弹窗右上角操作区改为轻量化按钮风格，视觉更简洁不压内容
+
 ### v0.6.3 (2026-02-18)
 
 <p align="center">
@@ -225,7 +238,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.3.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.4.exe`。
 
 安装过程支持：
 - 自定义安装目录

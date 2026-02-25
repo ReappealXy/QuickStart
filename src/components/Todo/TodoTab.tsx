@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useTodoStore } from '../../stores/todoStore'
 import { useTimerStore } from '../../stores/timerStore'
 import { createPortal } from 'react-dom'
@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import {
   ChevronLeft, ChevronRight, Palette, Trash2,
   Circle, CheckCircle2, CheckSquare, Plus, CalendarDays, X, Check, GripVertical,
-  Timer, Pause
+  Timer, Pause, Play, Square
 } from 'lucide-react'
 import CalendarPicker from './CalendarPicker'
 import {
@@ -46,6 +46,528 @@ function formatTimer(seconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
+function formatFocusSummary(seconds: number): string {
+  const totalMins = Math.floor(seconds / 60)
+  if (totalMins >= 60) {
+    const h = Math.floor(totalMins / 60)
+    const m = totalMins % 60
+    return `${h}h ${m}m`
+  }
+  return `${totalMins}m`
+}
+
+function formatDurationCN(seconds: number): string {
+  const totalMins = Math.floor(Math.max(0, seconds) / 60)
+  const h = Math.floor(totalMins / 60)
+  const m = totalMins % 60
+  if (h > 0) return `${h}小时${m}分`
+  if (totalMins > 0) return `${totalMins}分`
+  return '0分'
+}
+
+type FocusSegment = {
+  label: string
+  duration: number
+  ratio: number
+  color: string
+}
+
+function FocusDonutWidget({ items, isDark }: { items: TodoItem[]; isDark: boolean }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+
+  const { segments, totalDuration } = useMemo(() => {
+    const focusItems = items
+      .map((i) => ({
+        label: i.content?.trim() || '未命名事项',
+        duration: i.completedDuration && i.completedDuration > 0 ? i.completedDuration : 0,
+      }))
+      .filter((i) => i.duration > 0)
+      .sort((a, b) => b.duration - a.duration)
+
+    const total = focusItems.reduce((sum, i) => sum + i.duration, 0)
+    if (total <= 0) return { segments: [] as FocusSegment[], totalDuration: 0 }
+
+    const palette = [
+      '#F28AA5',
+      '#7CC8C4',
+      '#B7E9E9',
+      '#77A7B5',
+      '#F3D39A',
+      '#8E88E8',
+      '#D6D7EA',
+      '#5EB9E6',
+      '#CFCFCF',
+      '#F6B8C9',
+    ]
+    const computed: FocusSegment[] = focusItems.map((item, idx) => ({
+      label: item.label,
+      duration: item.duration,
+      ratio: item.duration / total,
+      color: palette[idx % palette.length],
+    }))
+    return { segments: computed, totalDuration: total }
+  }, [items])
+
+  const hasData = totalDuration > 0
+  const closeModal = useCallback(() => {
+    setIsOpen(false)
+    setHoveredIndex(null)
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeModal()
+    }
+    window.addEventListener('keydown', handleEsc)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', handleEsc)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [isOpen, closeModal])
+
+  const renderPie = (
+    size: number,
+    radius: number,
+    interactive = false,
+    emphasize = false,
+    withLabels = false
+  ) => {
+    const center = size / 2
+    const full = 2 * Math.PI
+    const separator = 'none'
+    let accumulated = -Math.PI / 2
+
+    type ArcMeta = {
+      segment: FocusSegment
+      index: number
+      start: number
+      end: number
+      mid: number
+      sweep: number
+    }
+
+    const arcs: ArcMeta[] = segments.map((segment, index) => {
+      const sweep = segment.ratio * full
+      const start = accumulated
+      const end = accumulated + sweep
+      accumulated = end
+      return {
+        segment,
+        index,
+        start,
+        end,
+        mid: start + sweep / 2,
+        sweep,
+      }
+    })
+
+    type RawCallout = {
+      arc: ArcMeta
+      side: 'left' | 'right'
+      x1: number
+      y1: number
+      x2: number
+      anchorY: number
+    }
+
+    type PositionedCallout = RawCallout & {
+      y: number
+      x3: number
+      textX: number
+      anchor: 'start' | 'end'
+    }
+
+    const arrangeCallouts = (rows: RawCallout[], side: 'left' | 'right'): PositionedCallout[] => {
+      if (rows.length === 0) return []
+      const sorted = [...rows].sort((a, b) => a.anchorY - b.anchorY)
+      const minY = center - radius - 12
+      const maxY = center + radius + 12
+      const gap = 14
+
+      const positioned: PositionedCallout[] = sorted.map((row) => ({
+        ...row,
+        y: row.anchorY,
+        x3: 0,
+        textX: 0,
+        anchor: side === 'right' ? 'start' : 'end',
+      }))
+
+      for (let i = 1; i < positioned.length; i += 1) {
+        positioned[i].y = Math.max(positioned[i].y, positioned[i - 1].y + gap)
+      }
+
+      if (positioned[positioned.length - 1].y > maxY) {
+        const overflow = positioned[positioned.length - 1].y - maxY
+        for (let i = positioned.length - 1; i >= 0; i -= 1) {
+          positioned[i].y -= overflow
+        }
+        for (let i = positioned.length - 2; i >= 0; i -= 1) {
+          positioned[i].y = Math.min(positioned[i].y, positioned[i + 1].y - gap)
+        }
+      }
+
+      if (positioned[0].y < minY) {
+        const underflow = minY - positioned[0].y
+        for (let i = 0; i < positioned.length; i += 1) {
+          positioned[i].y += underflow
+        }
+        for (let i = 1; i < positioned.length; i += 1) {
+          positioned[i].y = Math.max(positioned[i].y, positioned[i - 1].y + gap)
+        }
+      }
+
+      return positioned.map((row) => {
+        const dir = side === 'right' ? 1 : -1
+        const x3 = center + dir * (radius + 40)
+        return {
+          ...row,
+          x3,
+          textX: x3 + dir * 12,
+          anchor: side === 'right' ? 'start' : 'end',
+        }
+      })
+    }
+
+    const callouts = withLabels
+      ? (() => {
+        const left: RawCallout[] = []
+        const right: RawCallout[] = []
+        const calloutR = radius + 2
+        const elbowR = radius + 16
+
+        arcs.forEach((arc) => {
+          const side: 'left' | 'right' = Math.cos(arc.mid) >= 0 ? 'right' : 'left'
+          const row: RawCallout = {
+            arc,
+            side,
+            x1: center + Math.cos(arc.mid) * calloutR,
+            y1: center + Math.sin(arc.mid) * calloutR,
+            x2: center + Math.cos(arc.mid) * elbowR,
+            anchorY: center + Math.sin(arc.mid) * elbowR,
+          }
+          if (side === 'right') right.push(row)
+          else left.push(row)
+        })
+
+        return [...arrangeCallouts(left, 'left'), ...arrangeCallouts(right, 'right')]
+      })()
+      : []
+
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {arcs.map((arc) => {
+          const { segment: s, index: idx, start, end, mid, sweep } = arc
+          const active = hoveredIndex === idx
+
+          if (sweep >= full - 0.0001) {
+            return (
+              <circle
+                key={`${s.label}-${idx}-${size}`}
+                cx={center}
+                cy={center}
+                r={radius}
+                fill={s.color}
+                stroke={separator}
+                strokeWidth={0}
+                onMouseEnter={interactive ? () => setHoveredIndex(idx) : undefined}
+                onMouseLeave={interactive ? () => setHoveredIndex(null) : undefined}
+                style={{
+                  filter: active ? `drop-shadow(0 0 7px ${s.color}8a)` : 'none',
+                  cursor: interactive ? 'pointer' : 'default',
+                  transition: 'all 180ms ease',
+                }}
+              />
+            )
+          }
+
+          const x1 = center + radius * Math.cos(start)
+          const y1 = center + radius * Math.sin(start)
+          const x2 = center + radius * Math.cos(end)
+          const y2 = center + radius * Math.sin(end)
+          const largeArcFlag = sweep > Math.PI ? 1 : 0
+          const path = [
+            `M ${center} ${center}`,
+            `L ${x1} ${y1}`,
+            `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+            'Z',
+          ].join(' ')
+
+          const lift = 0
+          const tx = Math.cos(mid) * lift
+          const ty = Math.sin(mid) * lift
+
+          return (
+            <path
+              key={`${s.label}-${idx}-${size}`}
+              d={path}
+              fill={s.color}
+              stroke={separator}
+              strokeWidth={0}
+              onMouseEnter={interactive ? () => setHoveredIndex(idx) : undefined}
+              onMouseLeave={interactive ? () => setHoveredIndex(null) : undefined}
+              style={{
+                transform: `translate(${tx}px, ${ty}px)`,
+                filter: active ? `drop-shadow(0 0 7px ${s.color}8a)` : 'none',
+                cursor: interactive ? 'pointer' : 'default',
+                transition: 'all 180ms ease',
+              }}
+            />
+          )
+        })}
+
+        {withLabels && callouts.map((callout) => {
+          const active = hoveredIndex === callout.arc.index
+          const durationText = formatDurationCN(callout.arc.segment.duration)
+          const approxWidth = Math.max(
+            Array.from(durationText).reduce((sum, ch) => sum + (/[一-龥]/.test(ch) ? 12.5 : 7.5), 0) + 6,
+            44
+          )
+          const labelX = callout.anchor === 'start'
+            ? Math.min(callout.textX, size - approxWidth - 18)
+            : Math.max(callout.textX, approxWidth + 18)
+          const lineEndX = callout.anchor === 'start' ? labelX - 12 : labelX + 12
+          return (
+            <g
+              key={`callout-${callout.arc.index}-${size}`}
+              onMouseEnter={interactive ? () => setHoveredIndex(callout.arc.index) : undefined}
+              onMouseLeave={interactive ? () => setHoveredIndex(null) : undefined}
+              style={{ cursor: interactive ? 'pointer' : 'default' }}
+            >
+              <polyline
+                fill="none"
+                stroke={active ? '#7C4DFF' : (isDark ? 'rgba(228,228,231,0.8)' : 'rgba(63,63,70,0.72)')}
+                strokeWidth={active ? 1.6 : 1.2}
+                points={`${callout.x1},${callout.y1} ${callout.x2},${callout.y} ${lineEndX},${callout.y}`}
+                style={{ transition: 'all 150ms ease', strokeLinejoin: 'round', strokeLinecap: 'round' }}
+              />
+              <text
+                x={labelX}
+                y={callout.y}
+                textAnchor={callout.anchor}
+                dominantBaseline="middle"
+                style={{
+                  fontSize: '12px',
+                  fill: active ? '#7C4DFF' : (isDark ? '#f4f4f5' : '#27272a'),
+                  fontWeight: 700,
+                  paintOrder: 'stroke',
+                  stroke: isDark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.96)',
+                  strokeWidth: 5.2,
+                  strokeLinejoin: 'round',
+                  strokeLinecap: 'round',
+                }}
+              >
+                {durationText}
+              </text>
+            </g>
+          )
+        })}
+
+        {withLabels && arcs.map((arc) => {
+          if (arc.segment.ratio < 0.12) return null
+          const labelR = radius * 0.58
+          const lx = center + Math.cos(arc.mid) * labelR
+          const ly = center + Math.sin(arc.mid) * labelR
+          const text = arc.segment.label.length > 6 ? `${arc.segment.label.slice(0, 6)}...` : arc.segment.label
+          return (
+            <text
+              key={`inner-label-${arc.index}-${size}`}
+              x={lx}
+              y={ly}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              style={{
+                fontSize: '10px',
+                fill: isDark ? '#f4f4f5' : '#27272a',
+                fontWeight: 600,
+                pointerEvents: 'none',
+              }}
+            >
+              {text}
+            </text>
+          )
+        })}
+
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+          strokeWidth={emphasize ? 1.2 : 0.8}
+        />
+      </svg>
+    )
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200"
+        style={{
+          background: isOpen
+            ? (isDark ? 'rgba(124,77,255,0.18)' : 'rgba(124,77,255,0.1)')
+            : (isDark ? 'rgba(39,39,42,0.6)' : 'rgba(255,255,255,0.82)'),
+          border: isOpen
+            ? '1px solid rgba(124,77,255,0.28)'
+            : (isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.6)'),
+          boxShadow: hasData
+            ? '0 2px 12px -2px rgba(124,77,255,0.18)'
+            : (isDark ? '0 2px 8px rgba(0,0,0,0.14)' : '0 2px 8px rgba(0,0,0,0.03)'),
+          transform: 'translateZ(0)',
+        }}
+        title="查看专注统计"
+      >
+        {hasData ? (
+          <div className="transition-transform duration-200" style={{ transform: isOpen ? 'scale(1.05)' : 'scale(1)' }}>
+            {renderPie(30, 11)}
+          </div>
+        ) : (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.8">
+            <circle cx="12" cy="12" r="9" strokeDasharray="2.5 3" />
+          </svg>
+        )}
+      </button>
+
+      {isOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[1200] flex items-center justify-center animate-fadeIn"
+          style={{
+            background: isDark ? 'rgba(0,0,0,0.48)' : 'rgba(24,24,27,0.24)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            padding: '24px 30px',
+          }}
+          onClick={closeModal}
+        >
+          <div
+            className="w-full max-w-[620px] max-h-[88vh] overflow-y-auto rounded-3xl animate-scaleIn"
+            style={{
+              background: isDark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.96)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: isDark ? '1px solid rgba(255,255,255,0.09)' : '1px solid rgba(124,77,255,0.14)',
+              boxShadow: isDark ? '0 24px 56px -16px rgba(0,0,0,0.52)' : '0 20px 46px -16px rgba(124,77,255,0.3)',
+              padding: '16px 16px 14px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-semibold tracking-wide" style={{ color: isDark ? '#e4e4e7' : '#52525b' }}>
+                今日专注
+              </span>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all"
+                style={{
+                  color: isDark ? '#a1a1aa' : '#71717a',
+                  background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(124,77,255,0.08)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.11)' : 'rgba(124,77,255,0.16)'
+                  e.currentTarget.style.color = '#7C4DFF'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(124,77,255,0.08)'
+                  e.currentTarget.style.color = isDark ? '#a1a1aa' : '#71717a'
+                }}
+                title="关闭"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="mb-4">
+              <div className="text-[11px]" style={{ color: isDark ? '#71717a' : '#a1a1aa' }}>
+                总时长 {hasData ? formatDurationCN(totalDuration) : '0分'}
+              </div>
+            </div>
+
+            {hasData ? (
+              <>
+                <div className="flex flex-col items-center">
+                  <div className="w-full flex items-center justify-center">
+                    <div className="relative w-[252px] h-[252px] flex items-center justify-center">
+                      {renderPie(252, 82, true, true, true)}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[15px] font-semibold tabular-nums" style={{ color: isDark ? '#f4f4f5' : '#27272a' }}>
+                    总计 {formatDurationCN(totalDuration)}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-[12px] mb-2 font-semibold" style={{ color: isDark ? '#d4d4d8' : '#52525b' }}>
+                    模块时长分布
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                    {segments.map((s, idx) => {
+                      const active = hoveredIndex === idx
+                      return (
+                        <div
+                          key={`${s.label}-${idx}-row`}
+                          className="flex items-start justify-between rounded-lg transition-all duration-150"
+                          style={{
+                            padding: '4px 6px',
+                            background: active ? (isDark ? 'rgba(124,77,255,0.14)' : 'rgba(124,77,255,0.08)') : 'transparent',
+                            border: active ? '1px solid rgba(124,77,255,0.24)' : '1px solid transparent',
+                          }}
+                          onMouseEnter={() => setHoveredIndex(idx)}
+                          onMouseLeave={() => setHoveredIndex(null)}
+                        >
+                          <div className="flex items-start gap-2 min-w-0">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1"
+                              style={{ background: s.color, boxShadow: active ? `0 0 0 3px ${s.color}30` : 'none' }}
+                            />
+                            <div className="min-w-0">
+                              <div
+                                className="text-[13px] leading-tight whitespace-normal break-words"
+                                style={{ color: isDark ? '#f4f4f5' : '#27272a', fontWeight: active ? 700 : 600 }}
+                              >
+                                {s.label}
+                              </div>
+                              <div className="text-[11px] mt-0.5 tabular-nums" style={{ color: isDark ? '#a1a1aa' : '#71717a' }}>
+                                {formatDurationCN(s.duration)}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className="text-[13px] font-semibold tabular-nums ml-2"
+                            style={{ color: active ? '#7C4DFF' : (isDark ? '#d4d4d8' : '#52525b') }}
+                          >
+                            {(s.ratio * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.6">
+                  <circle cx="12" cy="12" r="9" strokeDasharray="2.5 3" />
+                </svg>
+                <span className="text-[12px]" style={{ color: isDark ? '#71717a' : '#a1a1aa' }}>
+                  今天还没有专注时长记录
+                </span>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
 /* ─── Sortable Item ─── */
 function SortableTodoItem({
   item,
@@ -59,9 +581,9 @@ function SortableTodoItem({
   isTimerActive,
   timerSeconds,
   onTimerToggle,
+  onTimerEnd,
   onOpenTimerMenu,
   isTimerFinished,
-  showTimerSaved,
 }: {
   item: TodoItem
   isDark: boolean
@@ -74,9 +596,9 @@ function SortableTodoItem({
   isTimerActive?: boolean
   timerSeconds?: number
   onTimerToggle?: () => void
+  onTimerEnd?: () => void
   onOpenTimerMenu?: (e: React.MouseEvent) => void
   isTimerFinished?: boolean
-  showTimerSaved?: number
 }) {
   const {
     attributes,
@@ -98,6 +620,12 @@ function SortableTodoItem({
   const countdownProgress = item.timerLimit && timerSeconds !== undefined
     ? Math.max(0, timerSeconds / item.timerLimit)
     : 1
+  const pausedSeconds = typeof item.timerSpent === 'number' ? item.timerSpent : null
+  const hasFinishedTimer = !item.done && !isTimerActive && !!item.completedDuration && item.completedDuration > 0
+  const hasPausedTimer = !item.done && !isTimerActive && !item.completedDuration && pausedSeconds !== null
+  const showTimerControls = !item.done && (isTimerActive || hasPausedTimer)
+  const showTimerBottomPill = showTimerControls || hasFinishedTimer
+  const showTimerEntry = !item.done && !showTimerBottomPill
 
   return (
     <div
@@ -210,45 +738,14 @@ function SortableTodoItem({
 
         {/* Content */}
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="flex items-center gap-3">
+          <div>
             <span
               onClick={() => !item.done && onEdit()}
-              className={`text-[14px] font-medium transition-all duration-300 ${item.done ? 'line-through cursor-default' : 'cursor-pointer'}`}
+              className={`block min-w-0 text-[14px] font-medium leading-relaxed break-words transition-all duration-300 ${item.done ? 'line-through cursor-default' : 'cursor-pointer'}`}
               style={{ color: item.done ? (isDark ? '#71717a' : '#a1a1aa') : item.color || (isDark ? '#e4e4e7' : '#27272a'), textDecorationColor: isDark ? '#52525b' : '#d4d4d8' }}
             >
               {item.content}
             </span>
-
-            {/* Timer icon on hover */}
-            {!item.done && !isTimerActive && (
-              <button
-                onClick={onOpenTimerMenu}
-                className="flex-shrink-0 opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-all duration-150 p-1.5 rounded-lg"
-                style={{ background: 'transparent' }}
-                onMouseEnter={(e) => e.currentTarget.style.background = isDark ? 'rgba(124,77,255,0.12)' : 'rgba(124,77,255,0.08)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                title="计时"
-              >
-                <Timer size={14} style={{ color: '#7C4DFF' }} />
-              </button>
-            )}
-
-            {/* Pause button */}
-            {!item.done && isTimerActive && (
-              <button
-                onClick={onTimerToggle}
-                className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all duration-150"
-                style={{ background: 'rgba(124,77,255,0.08)' }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(124,77,255,0.15)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(124,77,255,0.08)'}
-                title="暂停计时"
-              >
-                <Pause size={12} style={{ color: '#7C4DFF' }} />
-                <span className="font-mono text-[11px] font-semibold tabular-nums" style={{ color: '#7C4DFF' }}>
-                  {formatTimer(timerSeconds ?? 0)}
-                </span>
-              </button>
-            )}
           </div>
 
           {/* Time tag under title - badge style */}
@@ -263,37 +760,38 @@ function SortableTodoItem({
               }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7C4DFF" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span className="text-[11px] font-medium" style={{ color: '#7C4DFF' }}>专注时长：</span>
               <span className="font-mono text-[11px] font-semibold tabular-nums" style={{ color: '#7C4DFF' }}>{formatTimer(item.completedDuration)}</span>
+              <Check size={11} className="ml-auto" style={{ color: '#22c55e' }} />
             </div>
           )}
 
-          {/* Uncompleted task with finished countdown (completedDuration set but not done) */}
-          {!item.done && !isTimerActive && item.completedDuration && item.completedDuration > 0 && (
-            <div
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
-              style={{
-                background: isDark ? 'rgba(34,197,94,0.1)' : 'rgba(34,197,94,0.08)',
-                border: isDark ? '1px solid rgba(34,197,94,0.2)' : '1px solid rgba(34,197,94,0.15)',
-              }}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              <span className="text-[11px] font-medium" style={{ color: '#22c55e' }}>
-                专注完成 {formatTimer(item.completedDuration)}
-              </span>
-            </div>
-          )}
-
-          {/* Uncompleted task with partial timer progress (no completedDuration, has timerSpent) */}
-          {!item.done && !isTimerActive && !item.completedDuration && item.timerSpent && item.timerSpent > 0 && (
+          {/* Uncompleted task with paused timer progress (including 00:00) */}
+          {!item.done && !isTimerActive && !showTimerControls && !item.completedDuration && pausedSeconds !== null && pausedSeconds >= 0 && (
             <span className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md" style={{ color: isDark ? 'rgba(179,136,255,0.8)' : 'rgba(124,77,255,0.7)', background: isDark ? 'rgba(124,77,255,0.06)' : 'rgba(124,77,255,0.04)' }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span className="font-mono tabular-nums">已计 {formatTimer(item.timerSpent)}</span>
+              <span className="font-mono tabular-nums">已暂停 {formatTimer(pausedSeconds)}</span>
             </span>
           )}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className={`flex-shrink-0 ${showTimerBottomPill ? 'self-stretch flex flex-col items-end justify-between py-0.5' : 'flex items-center'}`}>
+          <div className="flex items-center gap-1">
+            {/* Timer entry button */}
+            {showTimerEntry && (
+              <button
+                onClick={onOpenTimerMenu}
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 opacity-0 group-hover:opacity-40 hover:!opacity-100"
+                style={{ color: '#7C4DFF' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(124,77,255,0.12)' : 'rgba(124,77,255,0.08)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
+                title="计时"
+              >
+                <Timer size={14} />
+              </button>
+            )}
+
           <button
             onClick={onEdit}
             className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 opacity-0 group-hover:opacity-40 hover:!opacity-100"
@@ -324,6 +822,91 @@ function SortableTodoItem({
           >
             <Trash2 size={13} />
           </button>
+          </div>
+
+          {/* Timer controls pinned to action area's bottom-right */}
+          {showTimerControls && (
+            <div
+              className="flex items-center"
+              style={{
+                borderRadius: '999px',
+                padding: '2px',
+                background: isDark ? 'rgba(124,77,255,0.16)' : 'rgba(124,77,255,0.08)',
+                border: isDark ? '1px solid rgba(124,77,255,0.28)' : '1px solid rgba(124,77,255,0.14)',
+                boxShadow: isTimerActive ? '0 6px 16px -10px rgba(124,77,255,0.45)' : 'none',
+              }}
+            >
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                style={{ color: '#7C4DFF' }}
+              >
+                <Timer size={11} />
+                <span className="font-mono text-[11px] font-semibold tabular-nums">
+                  {formatTimer(isTimerActive ? (timerSeconds ?? 0) : (pausedSeconds ?? 0))}
+                </span>
+              </div>
+              <div
+                aria-hidden
+                style={{
+                  width: '1px',
+                  height: '16px',
+                  background: isDark ? 'rgba(124,77,255,0.3)' : 'rgba(124,77,255,0.18)',
+                }}
+              />
+              <button
+                onClick={onTimerToggle}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-all duration-150 ml-1"
+                style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.75)' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.95)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.75)'}
+                title={isTimerActive ? '暂停计时' : '继续计时'}
+              >
+                {isTimerActive ? <Pause size={11} style={{ color: '#7C4DFF' }} /> : <Play size={11} style={{ color: '#7C4DFF' }} />}
+              </button>
+              <button
+                onClick={onTimerEnd}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-all duration-150 ml-1"
+                style={{ background: isDark ? 'rgba(239,68,68,0.16)' : 'rgba(239,68,68,0.1)' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = isDark ? 'rgba(239,68,68,0.24)' : 'rgba(239,68,68,0.16)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = isDark ? 'rgba(239,68,68,0.16)' : 'rgba(239,68,68,0.1)'}
+                title="结束计时"
+              >
+                <Square size={10} style={{ color: '#ef4444' }} />
+              </button>
+            </div>
+          )}
+
+          {/* Finished timer pill keeps same placement/style as running timer */}
+          {hasFinishedTimer && (
+            <div
+              className="flex items-center"
+              style={{
+                borderRadius: '999px',
+                padding: '2px',
+                background: isDark ? 'rgba(124,77,255,0.16)' : 'rgba(124,77,255,0.08)',
+                border: isDark ? '1px solid rgba(124,77,255,0.28)' : '1px solid rgba(124,77,255,0.14)',
+              }}
+            >
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ color: '#7C4DFF' }}>
+                <Timer size={11} />
+                <span className="text-[11px] font-medium">专注完成</span>
+                <span className="font-mono text-[11px] font-semibold tabular-nums">
+                  {formatTimer(item.completedDuration || 0)}
+                </span>
+              </div>
+              <div
+                aria-hidden
+                style={{
+                  width: '1px',
+                  height: '16px',
+                  background: isDark ? 'rgba(124,77,255,0.3)' : 'rgba(124,77,255,0.18)',
+                }}
+              />
+              <div className="w-7 h-7 rounded-full flex items-center justify-center ml-1" style={{ background: isDark ? 'rgba(34,197,94,0.18)' : 'rgba(34,197,94,0.12)' }}>
+                <Check size={11} style={{ color: '#22c55e' }} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -851,7 +1434,6 @@ export default function TodoTab() {
   const setTimerFinishedId = useTimerStore((s) => s.setTimerFinishedId)
 
   const [timerMenuFor, setTimerMenuFor] = useState<{ id: string; x: number; y: number } | null>(null)
-  const [timerSavedFlash, setTimerSavedFlash] = useState<{ id: string; seconds: number } | null>(null)
   const [, forceTimerUpdate] = useState(0)
 
   // Re-render for timer display
@@ -917,6 +1499,11 @@ export default function TodoTab() {
     const item = todoDay.items.find(i => i.id === id)
     if (!item) return
 
+    // Clear finished marker when user starts/resumes timing again.
+    if (item.completedDuration && item.completedDuration > 0) {
+      updateItem(id, { completedDuration: undefined })
+    }
+
     const limit = item.timerLimit && item.timerLimit > 0 ? item.timerLimit : null
     startTimer(id, item.content, currentDate, limit, item.timerSpent || 0)
   }, [activeTimerId, todoDay.items, startTimer, stopTimer, updateItem, currentDate])
@@ -924,15 +1511,13 @@ export default function TodoTab() {
   const handleTimerStop = useCallback((id: string) => {
     const { elapsed } = stopTimer()
 
-    // Save elapsed time
+    // Save elapsed time. Keep 00:00 visible for immediate pause.
     const item = todoDay.items.find(i => i.id === id)
-    if (item && elapsed > 0) {
-      const newSpent = (item.timerSpent || 0) + elapsed
-      updateItem(id, { timerSpent: newSpent })
-      // Show saved flash
-      setTimerSavedFlash({ id, seconds: elapsed })
-      setTimeout(() => setTimerSavedFlash(null), 1500)
-    }
+    if (!item) return
+
+    const baseSpent = typeof item.timerSpent === 'number' ? item.timerSpent : 0
+    const newSpent = baseSpent + elapsed
+    updateItem(id, { timerSpent: newSpent, completedDuration: undefined })
   }, [todoDay.items, updateItem, stopTimer])
 
   const handleTimerToggle = useCallback((id: string) => {
@@ -942,6 +1527,25 @@ export default function TodoTab() {
       handleTimerStart(id)
     }
   }, [activeTimerId, handleTimerStart, handleTimerStop])
+
+  const handleTimerEnd = useCallback((id: string) => {
+    const item = todoDay.items.find(i => i.id === id)
+    if (!item) return
+
+    let totalDuration = item.timerSpent || 0
+    if (activeTimerId === id) {
+      const { elapsed } = stopTimer()
+      totalDuration += elapsed
+    }
+
+    if (totalDuration > 0) {
+      updateItem(id, { timerSpent: totalDuration, completedDuration: totalDuration })
+      setTimerFinishedId(id)
+      setTimeout(() => setTimerFinishedId(null), 1500)
+    } else {
+      updateItem(id, { timerSpent: 0, completedDuration: undefined })
+    }
+  }, [todoDay.items, activeTimerId, stopTimer, updateItem, setTimerFinishedId])
 
   const openTimerMenu = useCallback((id: string, e: React.MouseEvent) => {
     const rect = (e.target as HTMLElement).getBoundingClientRect()
@@ -954,7 +1558,7 @@ export default function TodoTab() {
     if (!item) return
 
     // Update item and start timer immediately with no limit (count up)
-    updateItem(id, { timerLimit: undefined, timerSpent: 0 })
+    updateItem(id, { timerLimit: undefined, timerSpent: 0, completedDuration: undefined })
     startTimer(id, item.content, currentDate, null, 0)
   }, [updateItem, todoDay.items, startTimer, currentDate])
 
@@ -965,9 +1569,16 @@ export default function TodoTab() {
 
     const limitSeconds = minutes * 60
     // Update item and start timer immediately with the new limit
-    updateItem(id, { timerLimit: limitSeconds, timerSpent: 0 })
+    updateItem(id, { timerLimit: limitSeconds, timerSpent: 0, completedDuration: undefined })
     startTimer(id, item.content, currentDate, limitSeconds, 0)
   }, [updateItem, todoDay.items, startTimer, currentDate])
+
+  const orderedItems = useMemo(() => {
+    return [...todoDay.items].sort((a, b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1
+      return (a.order ?? 0) - (b.order ?? 0)
+    })
+  }, [todoDay.items])
 
   // ── dnd-kit ──
   const sensors = useSensors(
@@ -983,7 +1594,7 @@ export default function TodoTab() {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const items = todoDay.items
+    const items = orderedItems
     const oldIndex = items.findIndex((i) => i.id === active.id)
     const newIndex = items.findIndex((i) => i.id === over.id)
     if (oldIndex < 0 || newIndex < 0) return
@@ -992,7 +1603,9 @@ export default function TodoTab() {
     reorderItems(reordered.map((i) => i.id))
   }
 
-  const activeItem = activeId ? todoDay.items.find((i) => i.id === activeId) : null
+  const activeItem = activeId
+    ? orderedItems.find((i) => i.id === activeId) || todoDay.items.find((i) => i.id === activeId) || null
+    : null
 
   const handleAddKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && newContent.trim()) {
@@ -1072,15 +1685,18 @@ export default function TodoTab() {
             )}
           </button>
 
-          <button
-            onClick={goNextDay}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-            style={{ color: isDark ? '#71717a' : '#a1a1aa', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = '#7C4DFF'; e.currentTarget.style.background = 'rgba(124,77,255,0.06)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = isDark ? '#71717a' : '#a1a1aa'; e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
-          >
-            <ChevronRight size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <FocusDonutWidget items={todoDay.items} isDark={isDark} />
+            <button
+              onClick={goNextDay}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+              style={{ color: isDark ? '#71717a' : '#a1a1aa', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#7C4DFF'; e.currentTarget.style.background = 'rgba(124,77,255,0.06)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = isDark ? '#71717a' : '#a1a1aa'; e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Progress bar */}
@@ -1169,11 +1785,11 @@ export default function TodoTab() {
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={todoDay.items.map((i) => i.id)}
+            items={orderedItems.map((i) => i.id)}
             strategy={verticalListSortingStrategy}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {todoDay.items.map((item) => (
+              {orderedItems.map((item) => (
                 <SortableTodoItem
                   key={item.id}
                   item={item}
@@ -1207,9 +1823,9 @@ export default function TodoTab() {
                   isTimerActive={activeTimerId === item.id}
                   timerSeconds={activeTimerId === item.id ? timerSeconds : undefined}
                   onTimerToggle={() => handleTimerToggle(item.id)}
+                  onTimerEnd={() => handleTimerEnd(item.id)}
                   onOpenTimerMenu={(e) => openTimerMenu(item.id, e)}
                   isTimerFinished={timerFinishedId === item.id}
-                  showTimerSaved={timerSavedFlash?.id === item.id ? timerSavedFlash.seconds : undefined}
                 />
               ))}
             </div>
@@ -1230,6 +1846,7 @@ export default function TodoTab() {
                 isTimerActive={activeTimerId === activeItem.id}
                 timerSeconds={activeTimerId === activeItem.id ? timerSeconds : undefined}
                 onTimerToggle={() => {}}
+                onTimerEnd={() => {}}
                 onOpenTimerMenu={() => {}}
                 isTimerFinished={false}
               />
@@ -1454,12 +2071,6 @@ export default function TodoTab() {
         @keyframes timerMenuIn {
           from { opacity: 0; transform: translateY(-4px) scale(0.95); }
           to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes timerSavedFlash {
-          0% { opacity: 0; transform: translateY(4px); }
-          20% { opacity: 1; transform: translateY(0); }
-          80% { opacity: 1; transform: translateY(0); }
-          100% { opacity: 0; transform: translateY(-4px); }
         }
         @keyframes timerBreathGlow {
           0%, 100% { box-shadow: 0 0 20px rgba(124,77,255,0.15), 0 2px 12px -2px rgba(124,77,255,0.1); }

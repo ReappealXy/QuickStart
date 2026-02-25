@@ -15,6 +15,28 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 4)
 }
 
+function ensureDoneLast(items: TodoItem[]): TodoItem[] {
+  const pending: TodoItem[] = []
+  const done: TodoItem[] = []
+  for (const item of items) {
+    if (item.done) done.push(item)
+    else pending.push(item)
+  }
+  return [...pending, ...done]
+}
+
+function normalizeOrder(items: TodoItem[]): TodoItem[] {
+  return items.map((item, index) => ({ ...item, order: index }))
+}
+
+function sameIdSequence(a: TodoItem[], b: TodoItem[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return false
+  }
+  return true
+}
+
 interface TodoState {
   currentDate: string
   todoDay: TodoDay
@@ -61,7 +83,18 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     set({ loading: true })
     try {
       const data = await window.api.todos.load(d)
-      set({ todoDay: data, currentDate: d })
+      const rawItems = data.items || []
+      const normalizedItems = normalizeOrder(ensureDoneLast(rawItems))
+      const normalizedDay: TodoDay = { ...data, items: normalizedItems }
+      set({ todoDay: normalizedDay, currentDate: d })
+
+      // One-time self-heal for old data ordering.
+      const orderChanged =
+        !sameIdSequence(rawItems, normalizedItems) ||
+        rawItems.some((item, idx) => item.order !== idx)
+      if (orderChanged) {
+        await window.api.todos.save(d, normalizedDay)
+      }
     } catch {
       set({ todoDay: { date: d, archived: false, items: [] } })
     } finally {
@@ -72,45 +105,61 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   addItem: async (content: string) => {
     if (!content.trim()) return
     const { todoDay, currentDate } = get()
+    const base = normalizeOrder(ensureDoneLast(todoDay.items))
     const newItem: TodoItem = {
       id: generateId(),
       content: content.trim(),
       done: false,
       color: null,
       time: null,
-      order: todoDay.items.length,
+      order: base.length,
       createdAt: new Date().toISOString()
     }
-    const updated = { ...todoDay, items: [...todoDay.items, newItem] }
+    const firstDoneIndex = base.findIndex((item) => item.done)
+    const inserted =
+      firstDoneIndex === -1
+        ? [...base, newItem]
+        : [...base.slice(0, firstDoneIndex), newItem, ...base.slice(firstDoneIndex)]
+    const updated = { ...todoDay, items: normalizeOrder(inserted) }
     set({ todoDay: updated })
     await window.api.todos.save(currentDate, updated)
   },
 
   toggleItem: async (id: string) => {
     const { todoDay, currentDate } = get()
-    const updated = {
-      ...todoDay,
-      items: todoDay.items.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              done: !item.done,
-              doneAt: !item.done ? new Date().toISOString() : undefined
-            }
-          : item
-      )
+    const base = [...normalizeOrder(ensureDoneLast(todoDay.items))]
+    const idx = base.findIndex((item) => item.id === id)
+    if (idx === -1) return
+
+    const current = base[idx]
+    const toggled: TodoItem = {
+      ...current,
+      done: !current.done,
+      doneAt: !current.done ? new Date().toISOString() : undefined,
     }
+
+    base.splice(idx, 1)
+    if (toggled.done) {
+      base.push(toggled)
+    } else {
+      const firstDoneIndex = base.findIndex((item) => item.done)
+      if (firstDoneIndex === -1) base.push(toggled)
+      else base.splice(firstDoneIndex, 0, toggled)
+    }
+
+    const updated = { ...todoDay, items: normalizeOrder(ensureDoneLast(base)) }
     set({ todoDay: updated })
     await window.api.todos.save(currentDate, updated)
   },
 
   updateItem: async (id: string, updates: Partial<TodoItem>) => {
     const { todoDay, currentDate } = get()
+    const base = normalizeOrder(ensureDoneLast(todoDay.items))
     const updated = {
       ...todoDay,
-      items: todoDay.items.map((item) =>
+      items: normalizeOrder(ensureDoneLast(base.map((item) =>
         item.id === id ? { ...item, ...updates } : item
-      )
+      )))
     }
     set({ todoDay: updated })
     await window.api.todos.save(currentDate, updated)
@@ -120,7 +169,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     const { todoDay, currentDate } = get()
     const updated = {
       ...todoDay,
-      items: todoDay.items.filter((item) => item.id !== id)
+      items: normalizeOrder(ensureDoneLast(todoDay.items.filter((item) => item.id !== id)))
     }
     set({ todoDay: updated })
     await window.api.todos.save(currentDate, updated)
@@ -138,7 +187,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     for (const item of todoDay.items) {
       if (!ids.includes(item.id)) reordered.push(item)
     }
-    const updated = { ...todoDay, items: reordered }
+    const updated = { ...todoDay, items: normalizeOrder(ensureDoneLast(reordered)) }
     set({ todoDay: updated })
     await window.api.todos.save(currentDate, updated)
   }

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ClipboardList, Trash2, Copy, Check, Image as ImageIcon, FileText, X, Pencil, RotateCcw, FolderOpen } from 'lucide-react'
 
+const CLIPBOARD_DISPLAY_LIMIT = 100
+
 // ═══════════════════════════════════════════════════════════════════
 // 文本预览 Modal（流光溢彩 · 查看即编辑）
 // ═══════════════════════════════════════════════════════════════════
@@ -92,45 +94,70 @@ function TextPreviewModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* ═══ 顶部工具栏 ═══ */}
-        <div className="flex items-center justify-between flex-shrink-0 h-14" style={{ padding: '0 24px', borderBottom: '1px solid rgba(139,92,246,0.1)' }}>
-          <span className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">
+        <div
+          className="flex-shrink-0 flex items-center justify-between"
+          style={{
+            padding: '12px 18px',
+            borderBottom: '1px solid rgba(139,92,246,0.1)',
+            background: 'rgba(255,255,255,0.68)',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+          }}
+        >
+          <span className="text-[11px] font-semibold text-violet-500 tracking-wide">
             {isEditing ? '编辑模式' : '文本预览'}
           </span>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1.5">
             {isEditing ? (
               <>
                 {/* 保存 */}
                 <button
                   onClick={handleSave}
                   className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all"
-                  style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(16,185,129,0.2)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(16,185,129,0.1)' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: '1px solid rgba(16,185,129,0.28)',
+                    color: '#10b981',
+                    boxShadow: '0 3px 10px -8px rgba(16,185,129,0.6)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(16,185,129,0.13)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.82)' }}
                   title="保存 (Ctrl+Enter)"
                 >
-                  <Check size={15} />
+                  <Check size={14} />
                 </button>
                 {/* 重置 */}
                 <button
                   onClick={handleReset}
                   className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all"
-                  style={{ background: 'rgba(139,92,246,0.08)', color: '#a78bfa' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.08)' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: '1px solid rgba(167,139,250,0.28)',
+                    color: '#8b5cf6',
+                    boxShadow: '0 3px 10px -8px rgba(139,92,246,0.55)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.13)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.82)' }}
                   title="重置"
                 >
-                  <RotateCcw size={13} />
+                  <RotateCcw size={12} />
                 </button>
                 {/* 取消 */}
                 <button
                   onClick={handleCancelEdit}
                   className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all"
-                  style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: '1px solid rgba(248,113,113,0.25)',
+                    color: '#f87171',
+                    boxShadow: '0 3px 10px -8px rgba(248,113,113,0.55)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.82)' }}
                   title="放弃修改"
                 >
-                  <X size={15} />
+                  <X size={14} />
                 </button>
               </>
             ) : (
@@ -139,34 +166,49 @@ function TextPreviewModal({
                 <button
                   onClick={handleStartEdit}
                   className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all"
-                  style={{ background: 'rgba(139,92,246,0.08)', color: '#a78bfa' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.18)'; e.currentTarget.style.color = '#8b5cf6' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.08)'; e.currentTarget.style.color = '#a78bfa' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: '1px solid rgba(167,139,250,0.28)',
+                    color: '#8b5cf6',
+                    boxShadow: '0 3px 10px -8px rgba(139,92,246,0.55)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.13)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.82)' }}
                   title="编辑"
                 >
-                  <Pencil size={13} />
+                  <Pencil size={12} />
                 </button>
                 {/* 复制 */}
                 <button
                   onClick={handleCopy}
                   className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all"
-                  style={{ background: 'rgba(139,92,246,0.08)', color: copiedId === selectedText.id ? '#10b981' : '#a78bfa' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.18)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.08)' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: `1px solid ${copiedId === selectedText.id ? 'rgba(16,185,129,0.28)' : 'rgba(167,139,250,0.28)'}`,
+                    color: copiedId === selectedText.id ? '#10b981' : '#8b5cf6',
+                    boxShadow: '0 3px 10px -8px rgba(139,92,246,0.55)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.13)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.82)' }}
                   title="复制"
                 >
-                  {copiedId === selectedText.id ? <Check size={14} /> : <Copy size={14} />}
+                  {copiedId === selectedText.id ? <Check size={13} /> : <Copy size={13} />}
                 </button>
                 {/* 关闭 */}
                 <button
                   onClick={() => setSelectedText(null)}
                   className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all"
-                  style={{ background: 'rgba(113,113,122,0.08)', color: '#a1a1aa' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; e.currentTarget.style.color = '#f87171' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(113,113,122,0.08)'; e.currentTarget.style.color = '#a1a1aa' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.82)',
+                    border: '1px solid rgba(161,161,170,0.25)',
+                    color: '#a1a1aa',
+                    boxShadow: '0 3px 10px -8px rgba(113,113,122,0.45)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.color = '#f87171' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.82)'; e.currentTarget.style.color = '#a1a1aa' }}
                   title="关闭"
                 >
-                  <X size={15} />
+                  <X size={14} />
                 </button>
               </>
             )}
@@ -268,15 +310,18 @@ export default function ClipboardTab() {
   const searchRef = useRef<HTMLInputElement>(null)
 
   const loadHistory = useCallback(async () => {
-    const res = await window.api.clipboard.getHistory(500)
-    setItems(res.items)
+    const res = await window.api.clipboard.getHistory(CLIPBOARD_DISPLAY_LIMIT, 0)
+    setItems(res.items.slice(0, CLIPBOARD_DISPLAY_LIMIT))
     setTotal(res.total)
   }, [])
 
   useEffect(() => {
     loadHistory()
     const cleanup = window.api.clipboard.onNewItem((item) => {
-      setItems(prev => [item, ...prev.filter(i => !(i.type === 'text' && i.content === item.content))].slice(0, 500))
+      setItems(prev =>
+        [item, ...prev.filter(i => !(i.type === 'text' && i.content === item.content))]
+          .slice(0, CLIPBOARD_DISPLAY_LIMIT)
+      )
       setTotal(prev => prev + 1)
     })
     return cleanup
@@ -326,8 +371,9 @@ export default function ClipboardTab() {
     const itemId = undoToast.item.id
     // Restore item to list (insert at original position by timestamp)
     setItems(prev => {
-      const newItems = [...prev, undoToast.item]
-      return newItems.sort((a, b) => b.timestamp - a.timestamp)
+      const newItems = [undoToast.item, ...prev.filter(i => i.id !== undoToast.item.id)]
+        .sort((a, b) => b.timestamp - a.timestamp)
+      return newItems.slice(0, CLIPBOARD_DISPLAY_LIMIT)
     })
     setTotal(prev => prev + 1)
     setUndoToast(null)
@@ -368,7 +414,11 @@ export default function ClipboardTab() {
         <div className="flex items-center gap-2">
           <ClipboardList size={15} style={{ color: '#8b5cf6' }} />
           <span className="text-[13px] font-bold text-zinc-700">剪贴板</span>
-          {total > 0 && <span className="text-[10px] font-medium text-zinc-400">{total}</span>}
+          {total > 0 && (
+            <span className="text-[10px] font-medium text-zinc-400">
+              共{total}条{total > CLIPBOARD_DISPLAY_LIMIT ? `，仅展示前${CLIPBOARD_DISPLAY_LIMIT}条` : ''}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex-shrink-0 relative" style={{ marginBottom: '8px' }}>

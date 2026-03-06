@@ -29,6 +29,20 @@ function normalizeOrder(items: TodoItem[]): TodoItem[] {
   return items.map((item, index) => ({ ...item, order: index }))
 }
 
+function applyItemUpdates(items: TodoItem[], id: string, updates: Partial<TodoItem>): { items: TodoItem[]; found: boolean } {
+  let found = false
+  const updatedItems = items.map((item) => {
+    if (item.id !== id) return item
+    found = true
+    return { ...item, ...updates }
+  })
+
+  return {
+    items: normalizeOrder(ensureDoneLast(updatedItems)),
+    found,
+  }
+}
+
 function sameIdSequence(a: TodoItem[], b: TodoItem[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
@@ -49,6 +63,7 @@ interface TodoState {
   addItem: (content: string) => Promise<void>
   toggleItem: (id: string) => Promise<void>
   updateItem: (id: string, updates: Partial<TodoItem>) => Promise<void>
+  updateItemForDate: (date: string, id: string, updates: Partial<TodoItem>) => Promise<void>
   deleteItem: (id: string) => Promise<void>
   setItemColor: (id: string, color: string | null) => Promise<void>
   reorderItems: (ids: string[]) => Promise<void>
@@ -155,14 +170,48 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   updateItem: async (id: string, updates: Partial<TodoItem>) => {
     const { todoDay, currentDate } = get()
     const base = normalizeOrder(ensureDoneLast(todoDay.items))
+    const { items } = applyItemUpdates(base, id, updates)
     const updated = {
       ...todoDay,
-      items: normalizeOrder(ensureDoneLast(base.map((item) =>
-        item.id === id ? { ...item, ...updates } : item
-      )))
+      items,
     }
     set({ todoDay: updated })
     await window.api.todos.save(currentDate, updated)
+  },
+
+  updateItemForDate: async (date: string, id: string, updates: Partial<TodoItem>) => {
+    const { todoDay } = get()
+
+    if (todoDay.date === date) {
+      const { items, found } = applyItemUpdates(todoDay.items, id, updates)
+      if (found) {
+        const updatedDay = { ...todoDay, items }
+        set({ todoDay: updatedDay })
+        await window.api.todos.save(date, updatedDay)
+        return
+      }
+    }
+
+    try {
+      const loadedDay = await window.api.todos.load(date)
+      const { items, found } = applyItemUpdates(loadedDay.items || [], id, updates)
+      if (!found) return
+
+      const updatedDay: TodoDay = {
+        ...loadedDay,
+        date,
+        archived: loadedDay.archived ?? false,
+        items,
+      }
+
+      await window.api.todos.save(date, updatedDay)
+
+      if (get().currentDate === date) {
+        set({ todoDay: updatedDay })
+      }
+    } catch {
+      // Ignore background timer sync failures; the task file may have been removed.
+    }
   },
 
   deleteItem: async (id: string) => {

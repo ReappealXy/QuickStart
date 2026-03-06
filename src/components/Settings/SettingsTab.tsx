@@ -746,7 +746,13 @@ function ExportSection({ isDark, glassCard, setToast }: {
   glassCard: Record<string, unknown>
   setToast: (msg: string) => void
 }) {
-  const today = new Date().toISOString().split('T')[0]
+  const formatLocalDate = (d: Date): string => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  const today = formatLocalDate(new Date())
   const [source, setSource] = useState<'notes' | 'todos'>('notes')
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(today)
@@ -775,8 +781,8 @@ function ExportSection({ isDark, glassCard, setToast }: {
     const end = new Date()
     const start = new Date()
     start.setDate(end.getDate() - days + 1)
-    setStartDate(start.toISOString().split('T')[0])
-    setEndDate(end.toISOString().split('T')[0])
+    setStartDate(formatLocalDate(start))
+    setEndDate(formatLocalDate(end))
   }
 
   const handleExport = async (format: 'md' | 'pdf') => {

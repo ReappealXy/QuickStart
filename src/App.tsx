@@ -8,6 +8,7 @@ import AITab from './components/AI/AITab'
 import ClipboardTab from './components/Clipboard/ClipboardTab'
 import SettingsTab from './components/Settings/SettingsTab'
 import { useSettingsStore } from './stores/settingsStore'
+import { useTodoStore } from './stores/todoStore'
 import { useTimerStore, startGlobalTimerTick, stopGlobalTimerTick, setTimerCallbacks } from './stores/timerStore'
 
 function formatTimer(seconds: number): string {
@@ -34,17 +35,7 @@ export default function App() {
         setTimerFinishedModal({ taskName, duration })
       },
       onUpdateTask: async (taskId, taskDate, updates) => {
-        // Load todos for the specific date and update the item
-        const todos = await window.api.todos.load(taskDate)
-        if (todos) {
-          const updated = {
-            ...todos,
-            items: todos.items.map((item: any) =>
-              item.id === taskId ? { ...item, ...updates } : item
-            )
-          }
-          await window.api.todos.save(taskDate, updated)
-        }
+        await useTodoStore.getState().updateItemForDate(taskDate, taskId, updates)
       },
     })
   }, [setTimerFinishedModal])

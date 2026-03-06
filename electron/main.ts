@@ -12,7 +12,7 @@ import {
   net,
   dialog
 } from 'electron'
-import { join, basename } from 'path'
+import { join, basename, dirname, extname } from 'path'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
 import {
@@ -1069,6 +1069,92 @@ function setupIPC(): void {
     return results.sort((a, b) => a.date.localeCompare(b.date))
   }
 
+  function resolveQuickstartMediaPath(fileName: string, preferredWsId: string): string | null {
+    const decodedName = decodeURIComponent(fileName)
+    const cfg = readConfig()
+    const candidates: string[] = []
+
+    candidates.push(join(getWsAttachDir(preferredWsId), decodedName))
+
+    const activeWsId = cfg.activeWorkspaceId || 'default'
+    if (activeWsId !== preferredWsId) {
+      candidates.push(join(getWsAttachDir(activeWsId), decodedName))
+    }
+
+    for (const ws of cfg.workspaces) {
+      if (ws.id === preferredWsId || ws.id === activeWsId) continue
+      candidates.push(join(getWsAttachDir(ws.id), decodedName))
+    }
+
+    candidates.push(join(getDataDir(), 'workspaces', 'default', 'attachments', decodedName))
+
+    for (const p of candidates) {
+      if (existsSync(p)) return p
+    }
+    return null
+  }
+
+  function rewriteQuickstartImagesForMdExport(markdown: string, exportMdPath: string, wsId: string): string {
+    const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
+    const mediaPrefix = 'quickstart://media/'
+    const exportDir = dirname(exportMdPath)
+    const mdBaseName = basename(exportMdPath, extname(exportMdPath))
+    const assetsDirName = `${mdBaseName}_attachments`
+    const copiedBySource = new Map<string, string>()
+    let assetsDirPath: string | null = null
+
+    const ensureAssetsDir = () => {
+      if (!assetsDirPath) {
+        assetsDirPath = join(exportDir, assetsDirName)
+        if (!existsSync(assetsDirPath)) mkdirSync(assetsDirPath, { recursive: true })
+      }
+      return assetsDirPath
+    }
+
+    const extractTargetUrl = (rawTarget: string): string => {
+      const target = rawTarget.trim()
+      if (target.startsWith('<')) {
+        const end = target.indexOf('>')
+        if (end > 1) return target.slice(1, end).trim()
+      }
+      const spaceIndex = target.search(/\s/)
+      return spaceIndex >= 0 ? target.slice(0, spaceIndex).trim() : target
+    }
+
+    return markdown.replace(imageRegex, (full, altText: string, rawTarget: string) => {
+      const url = extractTargetUrl(rawTarget)
+      if (!url.startsWith(mediaPrefix)) return full
+
+      const rawName = url.slice(mediaPrefix.length).split(/[?#]/)[0]
+      if (!rawName) return full
+
+      const sourcePath = resolveQuickstartMediaPath(rawName, wsId)
+      if (!sourcePath) return full
+
+      let relPath = copiedBySource.get(sourcePath)
+      if (!relPath) {
+        const assetsPath = ensureAssetsDir()
+        let targetName = basename(sourcePath)
+        const fileExt = extname(targetName)
+        const fileBase = basename(targetName, fileExt)
+        let destPath = join(assetsPath, targetName)
+        let index = 2
+
+        while (existsSync(destPath)) {
+          targetName = `${fileBase}_${index}${fileExt}`
+          destPath = join(assetsPath, targetName)
+          index++
+        }
+
+        copyFileSync(sourcePath, destPath)
+        relPath = `./${assetsDirName}/${targetName}`.replace(/\\/g, '/')
+        copiedBySource.set(sourcePath, relPath)
+      }
+
+      return `![${altText}](${relPath})`
+    })
+  }
+
   ipcMain.handle('notes:export', async (_e, startDate: string, endDate: string, format: 'md' | 'pdf', wsId?: string) => {
     if (!mainWindow) return { success: false, error: 'no window' }
     try {
@@ -1100,7 +1186,8 @@ function setupIPC(): void {
           if (note.title) merged += `## ${note.title}\n\n`
           merged += note.content + '\n\n'
         }
-        writeFileSync(result.filePath, merged.trim(), 'utf-8')
+        const exportedMarkdown = rewriteQuickstartImagesForMdExport(merged.trim(), result.filePath, targetWsId)
+        writeFileSync(result.filePath, exportedMarkdown, 'utf-8')
 
         return { success: true, filePath: result.filePath, count: notes.length }
       }
@@ -1194,7 +1281,8 @@ function setupIPC(): void {
           filters: [{ name: 'Markdown', extensions: ['md'] }],
         })
         if (result.canceled || !result.filePath) return { success: false, canceled: true }
-        writeFileSync(result.filePath, merged, 'utf-8')
+        const exportedMarkdown = rewriteQuickstartImagesForMdExport(merged, result.filePath, wsId)
+        writeFileSync(result.filePath, exportedMarkdown, 'utf-8')
         return { success: true, filePath: result.filePath }
       }
 

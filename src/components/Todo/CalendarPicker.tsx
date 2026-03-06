@@ -21,6 +21,10 @@ function formatDate(year: number, month: number, day: number): string {
   return `${year}-${pad(month)}-${pad(day)}`
 }
 
+function getLocalDateString(d: Date = new Date()): string {
+  return formatDate(d.getFullYear(), d.getMonth() + 1, d.getDate())
+}
+
 /** Get all days to display in a month grid (includes prev/next month padding) */
 function getCalendarDays(year: number, month: number) {
   const firstDay = new Date(year, month - 1, 1).getDay() // 0=Sun
@@ -65,7 +69,7 @@ export default function CalendarPicker({ selectedDate, onSelect, onClose }: Cale
   const [summary, setSummary] = useState<Record<string, { total: number; done: number }>>({})
 
   const isDark = document.documentElement.classList.contains('dark')
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = getLocalDateString()
 
   // Load month summary
   const loadSummary = useCallback(async () => {

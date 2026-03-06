@@ -39,6 +39,13 @@ function formatDateDisplay(dateStr: string): string {
   return `${month}月${day}日 · 周${weekDays[d.getDay()]}`
 }
 
+function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 /* ─── Format Timer ─── */
 function formatTimer(seconds: number): string {
   const mins = Math.floor(Math.abs(seconds) / 60)
@@ -1451,14 +1458,26 @@ export default function TodoTab() {
   const isDark = document.documentElement.classList.contains('dark')
 
   // Real-time today detection
-  const [todayStr, setTodayStr] = useState(() => new Date().toISOString().split('T')[0])
+  const [todayStr, setTodayStr] = useState(() => getLocalDateString())
   useEffect(() => {
     const timer = setInterval(() => {
-      const now = new Date().toISOString().split('T')[0]
+      const now = getLocalDateString()
       setTodayStr((prev) => (prev !== now ? now : prev))
     }, 1000)
     return () => clearInterval(timer)
   }, [])
+
+  const prevTodayRef = useRef(todayStr)
+  useEffect(() => {
+    const previousToday = prevTodayRef.current
+    if (todayStr !== previousToday) {
+      // Auto-switch to the new day only if user was viewing "today" before midnight.
+      if (currentDate === previousToday) {
+        setDate(todayStr)
+      }
+      prevTodayRef.current = todayStr
+    }
+  }, [todayStr, currentDate, setDate])
 
   const isToday = currentDate === todayStr
 

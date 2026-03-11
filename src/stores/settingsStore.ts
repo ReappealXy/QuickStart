@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type TabType = 'notes' | 'todo' | 'translate' | 'ai' | 'clipboard' | 'settings'
+export type TabType = 'notes' | 'todo' | 'tools' | 'translate' | 'ai' | 'clipboard' | 'prompts' | 'settings'
 export type ThemeType = 'light' | 'dark' | 'system'
 
 interface SettingsState {

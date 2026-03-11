@@ -104,6 +104,16 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('config:autoStartChanged', handler)
     }
   },
+  prompts: {
+    list: () => ipcRenderer.invoke('prompts:list'),
+    save: (prompt: { id?: string; name: string; tag: string; content: string; isPinned?: boolean }) =>
+      ipcRenderer.invoke('prompts:save', prompt),
+    delete: (id: string) => ipcRenderer.invoke('prompts:delete', id),
+    import: (items: unknown[]) => ipcRenderer.invoke('prompts:import', items),
+    export: () => ipcRenderer.invoke('prompts:export'),
+    getStoragePath: () => ipcRenderer.invoke('prompts:getStoragePath'),
+    setStoragePath: (newPath: string | null, migrate?: boolean) => ipcRenderer.invoke('prompts:setStoragePath', newPath, migrate),
+  },
   clipboard: {
     getHistory: (limit?: number, offset?: number) =>
       ipcRenderer.invoke('clipboard:getHistory', limit, offset),

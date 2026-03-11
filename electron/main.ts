@@ -2294,6 +2294,164 @@ function setupIPC(): void {
   // Legacy compat - no-op for old resetPath
   ipcMain.handle('attachments:resetPath', async () => ({ success: true, migratedCount: 0 }))
 
+  // ---- Prompts ----
+  var PROMPTS_DEFAULT: { id: string; name: string; tag: string; content: string; isPinned: boolean; createdAt: number }[] = [
+    {
+      id: 'default_1',
+      name: '文章润色专家',
+      tag: '写作',
+      content: '请将下面的文本润色为更通顺、更专业的中文，同时保留原意并给出三种不同风格（正式、亲切、技术性）的改写版本。',
+      isPinned: false,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'default_2',
+      name: 'Tailwind 助手',
+      tag: '编程',
+      content: '根据下面的 UI 描述，生成对应的 Tailwind CSS 类名与简短示例 HTML，包含响应式样式和可访问性建议。',
+      isPinned: false,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'default_3',
+      name: '市场文案生成器',
+      tag: '营销',
+      content: '为一款目标用户为职场人士的时间管理工具，生成三条不同角度的产品宣传文案（简洁、情感、功能导向），并包含一句 30 字以内的广告语。',
+      isPinned: false,
+      createdAt: Date.now(),
+    },
+  ]
+
+  /**
+   * 获取提示词存储文件路径（支持自定义）
+   * @return 完整的 prompts.json 路径
+   */
+  function getPromptsFilePath(): string {
+    var cfg = readConfig() as Record<string, unknown>
+    var custom = cfg.promptsStoragePath as string | undefined
+    var dir = custom || dataDir
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    return join(dir, 'prompts.json')
+  }
+
+  /**
+   * 读取提示词列表，首次加载写入默认数据
+   * @return PromptItem[]
+   */
+  ipcMain.handle('prompts:list', () => {
+    var filePath = getPromptsFilePath()
+    var list = safeReadJSON<unknown[]>(filePath, [])
+    if (!Array.isArray(list) || list.length === 0) {
+      safeWriteJSON(filePath, PROMPTS_DEFAULT)
+      return PROMPTS_DEFAULT
+    }
+    return list
+  })
+
+  /**
+   * 新增或更新单条提示词
+   * @param prompt 提示词对象，无 id 时新增
+   * @return { success, id }
+   */
+  ipcMain.handle('prompts:save', (_e, prompt: { id?: string; name: string; tag: string; content: string; isPinned?: boolean }) => {
+    try {
+      var list = safeReadJSON<{ id: string; name: string; tag: string; content: string; isPinned: boolean; createdAt: number }[]>(getPromptsFilePath(), [])
+      if (prompt.id) {
+        var idx = list.findIndex(p => p.id === prompt.id)
+        if (idx >= 0) {
+          list[idx] = { ...list[idx], name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? list[idx].isPinned }
+        }
+      } else {
+        var newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+        list.push({ id: newId, name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? false, createdAt: Date.now() })
+        prompt.id = newId
+      }
+      safeWriteJSON(getPromptsFilePath(), list)
+      return { success: true, id: prompt.id }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /** @param id 要删除的提示词 ID */
+  ipcMain.handle('prompts:delete', (_e, id: string) => {
+    try {
+      var list = safeReadJSON<{ id: string }[]>(getPromptsFilePath(), [])
+      var filtered = list.filter(p => p.id !== id)
+      safeWriteJSON(getPromptsFilePath(), filtered)
+      return { success: true }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /** @param items 要导入的 JSON 数组，替换现有数据 */
+  ipcMain.handle('prompts:import', (_e, items: unknown[]) => {
+    try {
+      if (!Array.isArray(items)) return { success: false, error: '格式无效' }
+      var normalized = items.map((item: any) => ({
+        id: item.id || Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        name: item.name || '',
+        tag: item.tag || '',
+        content: item.content || '',
+        isPinned: !!item.isPinned,
+        createdAt: item.createdAt || Date.now(),
+      }))
+      safeWriteJSON(getPromptsFilePath(), normalized)
+      return { success: true, count: normalized.length }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  ipcMain.handle('prompts:export', async () => {
+    try {
+      var list = safeReadJSON<unknown[]>(getPromptsFilePath(), [])
+      var result = await dialog.showSaveDialog({
+        title: '导出提示词',
+        defaultPath: `prompts_backup_${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (result.canceled || !result.filePath) return { success: false, canceled: true }
+      writeFileSync(result.filePath, JSON.stringify(list, null, 2), 'utf-8')
+      return { success: true, filePath: result.filePath }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /** @return 当前提示词存储目录 */
+  ipcMain.handle('prompts:getStoragePath', () => {
+    var cfg = readConfig() as Record<string, unknown>
+    return (cfg.promptsStoragePath as string) || dataDir
+  })
+
+  /**
+   * 设置提示词自定义存储路径并迁移数据
+   * @param newPath 新路径，null 表示恢复默认
+   * @param migrate 是否将旧数据迁移到新路径
+   */
+  ipcMain.handle('prompts:setStoragePath', (_e, newPath: string | null, migrate: boolean = true) => {
+    try {
+      var cfg = readConfig() as Record<string, unknown>
+      var oldFile = getPromptsFilePath()
+      var targetDir = newPath || dataDir
+
+      if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true })
+      var newFile = join(targetDir, 'prompts.json')
+
+      // 迁移旧文件到新位置
+      var didMigrate = false
+      if (migrate && existsSync(oldFile) && oldFile !== newFile) {
+        var oldData = safeReadJSON<unknown[]>(oldFile, [])
+        if (oldData.length > 0) {
+          safeWriteJSON(newFile, oldData)
+          didMigrate = true
+        }
+      }
+
+      if (newPath) {
+        cfg.promptsStoragePath = newPath
+      } else {
+        delete cfg.promptsStoragePath
+      }
+      writeConfig(cfg as ConfigV3)
+      return { success: true, path: getPromptsFilePath(), migrated: didMigrate }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
   // ---- Clipboard History ----
   ipcMain.handle('clipboard:getHistory', (_e, limit: number = 100, offset: number = 0) => {
     return { items: clipboardHistory.slice(offset, offset + limit), total: clipboardHistory.length }

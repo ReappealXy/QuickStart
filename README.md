@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.4-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -132,15 +132,43 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ## 版本更新
 
-### v0.6.4 (2026-02-25)
+### v0.7.0 (2026-03-11)
 
-- **清单计时状态修复** —— 点击暂停后保持为“已暂停”状态，不再误判为“计时结束”
+#### 🎯 大功能
+
+- **导航栏重构** —— 顶部 Tab 从 6 个精简为 4 个（记录、清单、工具、设置），翻译/AI/剪贴板合并到工具进入卡片首页
+  - 工具首页卡片展示翻译、AI、剪贴板、提示词四大功能
+  - 进入对应功能后自动高亮"工具" Tab，切换功能无缝衔接
+  - 快捷键 `Ctrl+3` 快速打开工具首页
+
+<p align="center">
+  <img src="screenshots/tools-home.png" width="280" alt="工具首页卡片">
+
+- **新增提示词功能** —— 工具 Tab 中新增提示词管理工具，参照 prompt-master 设计
+  - 卡片式列表展示，支持搜索、标签筛选
+  - 支持新增/编辑/删除/置顶提示词
+  - 内置 3 条默认提示词（文章润色、Tailwind 助手、市场文案生成）
+  - 一键复制提示词到剪贴板，支持导入导出 JSON 备份
+  - 数据本地存储（`dataDir/prompts.json`），首次加载自动初始化
+
+<p align="center">
+  <img src="screenshots/prompts-list.png" width="280" alt="提示词列表">
+  <img src="screenshots/prompts-edit.png" width="280" alt="编辑提示词">
+  <img src="screenshots/prompts-import-export.png" width="280" alt="导入导出">
+</p>
+
+#### 🐛 清单模块优化
+
+- **清单计时状态修复** —— 点击暂停后保持为"已暂停"状态，不再误判为"计时结束"
 - **计时零值显示修复** —— 开始后立即暂停时，统一显示标准时长格式，不再出现裸 `0`
-- **计时交互完善** —— 在“开始/暂停”之外补充“结束计时”入口，暂停后可继续或手动结束
+- **计时交互完善** —— 在"开始/暂停"之外补充"结束计时"入口，暂停后可继续或手动结束
 - **清单排序逻辑优化** —— 新建未完成事项始终在未完成区；勾选完成后自动下沉到已完成区
-- **专注时长样式统一** —— 完成态时长标签统一为“专注时长”视觉体系，完成状态增加明确勾选反馈
+- **专注时长样式统一** —— 完成态时长标签统一为"专注时长"视觉体系，完成状态增加明确勾选反馈
 - **今日专注统计弹窗** —— 日期栏新增统计入口，支持弹窗查看当日专注总时长 + 各模块时长占比圆饼图
 - **图表交互与排版打磨** —— 饼图标注、模块列表、hover 高亮与弹窗留白重新调整，避免遮挡与拥挤
+
+#### 📋 剪贴板模块优化
+
 - **剪贴板性能优化** —— 剪贴板页默认仅渲染前 100 条记录，降低从 AI 切换到剪贴板时的卡顿
 - **剪贴板头部信息补充** —— 顶部显示“共 X 条，仅展示前 100 条”，明确展示范围
 - **文本预览工具栏重绘** —— 预览弹窗右上角操作区改为轻量化按钮风格，视觉更简洁不压内容
@@ -238,7 +266,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.6.4.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.7.0.exe`。
 
 安装过程支持：
 - 自定义安装目录

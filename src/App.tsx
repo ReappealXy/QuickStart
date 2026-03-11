@@ -6,6 +6,9 @@ import TodoTab from './components/Todo/TodoTab'
 import TranslatorTab from './components/Translator/TranslatorTab'
 import AITab from './components/AI/AITab'
 import ClipboardTab from './components/Clipboard/ClipboardTab'
+import PromptTab from './components/Prompts/PromptTab'
+import ToolsTab from './components/Tools/ToolsTab'
+import ToolSubPageHeader from './components/Tools/ToolSubPageHeader'
 import SettingsTab from './components/Settings/SettingsTab'
 import { useSettingsStore } from './stores/settingsStore'
 import { useTodoStore } from './stores/todoStore'
@@ -59,9 +62,9 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') window.api.window.hide()
-      if (e.ctrlKey && e.key >= '1' && e.key <= '5') {
+      if (e.ctrlKey && e.key >= '1' && e.key <= '3') {
         e.preventDefault()
-        const tabs = ['notes', 'todo', 'translate', 'ai', 'clipboard'] as const
+        const tabs = ['notes', 'todo', 'tools'] as const
         useSettingsStore.getState().setActiveTab(tabs[parseInt(e.key) - 1])
       }
       if (e.ctrlKey && e.key === ',') {
@@ -86,9 +89,31 @@ export default function App() {
       <div className="flex-1 overflow-hidden animate-fadeIn">
         {activeTab === 'notes' && <NotesTab />}
         {activeTab === 'todo' && <TodoTab />}
-        {activeTab === 'translate' && <TranslatorTab />}
-        {activeTab === 'ai' && <AITab />}
-        {activeTab === 'clipboard' && <ClipboardTab />}
+        {activeTab === 'tools' && <ToolsTab />}
+        {activeTab === 'translate' && (
+          <div className="flex flex-col h-full">
+            <ToolSubPageHeader title="翻译" />
+            <div className="flex-1 min-h-0 overflow-hidden"><TranslatorTab /></div>
+          </div>
+        )}
+        {activeTab === 'ai' && (
+          <div className="flex flex-col h-full">
+            <ToolSubPageHeader title="AI 助手" />
+            <div className="flex-1 min-h-0 overflow-hidden"><AITab /></div>
+          </div>
+        )}
+        {activeTab === 'clipboard' && (
+          <div className="flex flex-col h-full">
+            <ToolSubPageHeader title="剪贴板" />
+            <div className="flex-1 min-h-0 overflow-hidden"><ClipboardTab /></div>
+          </div>
+        )}
+        {activeTab === 'prompts' && (
+          <div className="flex flex-col h-full">
+            <ToolSubPageHeader title="提示词" />
+            <div className="flex-1 min-h-0 overflow-hidden"><PromptTab /></div>
+          </div>
+        )}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
 

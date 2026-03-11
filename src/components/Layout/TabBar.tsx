@@ -1,15 +1,24 @@
 import { useState, useEffect, useRef } from 'react'
-import { FileText, CheckSquare, Languages, Bot, ClipboardList, Settings } from 'lucide-react'
+import { FileText, CheckSquare, Wrench, Settings } from 'lucide-react'
 import { useSettingsStore, type TabType } from '../../stores/settingsStore'
 
-const tabs: { id: TabType; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
+// translate/ai/clipboard 属于 tools 的子页面
+var TOOLS_SUB_TABS: TabType[] = ['translate', 'ai', 'clipboard', 'prompts']
+
+var tabs: { id: TabType; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: 'notes', label: '记录', icon: FileText },
   { id: 'todo', label: '清单', icon: CheckSquare },
-  { id: 'translate', label: '翻译', icon: Languages },
-  { id: 'ai', label: 'AI', icon: Bot },
-  { id: 'clipboard', label: '剪贴板', icon: ClipboardList },
-  { id: 'settings', label: '', icon: Settings }
+  { id: 'tools', label: '工具', icon: Wrench },
+  { id: 'settings', label: '', icon: Settings },
 ]
+
+/**
+ * 获取 TabBar 上实际应高亮的 Tab ID
+ * @param activeTab 当前 activeTab 状态值
+ * @return 映射后的顶层 Tab ID
+ */
+var getVisualActiveTab = (activeTab: TabType): TabType =>
+  TOOLS_SUB_TABS.includes(activeTab) ? 'tools' : activeTab
 
 export default function TabBar() {
   const activeTab = useSettingsStore((s) => s.activeTab)
@@ -18,11 +27,12 @@ export default function TabBar() {
   const tabRefs = useRef<Map<TabType, HTMLButtonElement>>(new Map())
   const [indicator, setIndicator] = useState({ left: 0, width: 0 })
 
-  // Update indicator position when activeTab changes
+  var visualTab = getVisualActiveTab(activeTab)
+
   useEffect(() => {
     const updateIndicator = () => {
       const container = containerRef.current
-      const activeButton = tabRefs.current.get(activeTab)
+      const activeButton = tabRefs.current.get(visualTab)
       if (container && activeButton) {
         const containerRect = container.getBoundingClientRect()
         const buttonRect = activeButton.getBoundingClientRect()
@@ -35,7 +45,7 @@ export default function TabBar() {
     updateIndicator()
     window.addEventListener('resize', updateIndicator)
     return () => window.removeEventListener('resize', updateIndicator)
-  }, [activeTab])
+  }, [visualTab])
 
   return (
     <div
@@ -64,8 +74,7 @@ export default function TabBar() {
 
       {tabs.map((tab) => {
         const Icon = tab.icon
-        const isActive = activeTab === tab.id
-        const isIconOnly = !tab.label
+        const isActive = visualTab === tab.id
         return (
           <button
             key={tab.id}

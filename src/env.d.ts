@@ -88,6 +88,15 @@ interface Window {
       relaunch(): void
       onAutoStartChanged(callback: (enabled: boolean) => void): () => void
     }
+    prompts: {
+      list(): Promise<PromptItem[]>
+      save(prompt: { id?: string; name: string; tag: string; content: string; isPinned?: boolean }): Promise<{ success: boolean; id?: string; error?: string }>
+      delete(id: string): Promise<{ success: boolean; error?: string }>
+      import(items: unknown[]): Promise<{ success: boolean; count?: number; error?: string }>
+      export(): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
+      getStoragePath(): Promise<string>
+      setStoragePath(newPath: string | null, migrate?: boolean): Promise<{ success: boolean; path?: string; migrated?: boolean; error?: string }>
+    }
     clipboard: {
       getHistory(limit?: number, offset?: number): Promise<{ items: ClipboardHistoryItem[]; total: number }>
       writeBack(itemId: string): Promise<{ success: boolean; error?: string }>
@@ -219,4 +228,13 @@ interface FileReadResult {
   url?: string
   content?: string
   error?: string
+}
+
+interface PromptItem {
+  id: string
+  name: string
+  tag: string
+  content: string
+  isPinned: boolean
+  createdAt: number
 }

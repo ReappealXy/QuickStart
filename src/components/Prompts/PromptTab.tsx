@@ -81,18 +81,17 @@ export default function PromptTab() {
     var target = items.find(p => p.id === id)
     if (!target) return
 
-    // 取消之前的 undo
+    // 取消之前的 undo（前一个已经真正删除了，无需再处理）
     if (undoToast) {
       clearTimeout(undoToast.timer)
       clearInterval(undoToast.intervalId)
-      // 前一个立即执行真正删除
-      window.api.prompts.delete(undoToast.itemId)
     }
 
-    // 先从本地列表中移除
+    // 立即从文件中删除，保证重启后不会残留
+    window.api.prompts.delete(id)
     setItems(prev => prev.filter(p => p.id !== id))
 
-    // 启动倒计时
+    // undo 倒计时（到期只需关闭 toast；撤销时再 save 回去）
     let remaining = UNDO_DURATION
     var intervalId = setInterval(() => {
       remaining -= 1
@@ -101,29 +100,34 @@ export default function PromptTab() {
 
     var timer = setTimeout(() => {
       clearInterval(intervalId)
-      window.api.prompts.delete(id)
       setUndoToast(null)
     }, UNDO_DURATION * 1000)
 
     setUndoToast({ itemId: id, itemName: target.name, removedItem: target, timer, intervalId, remaining: UNDO_DURATION })
   }, [items, undoToast])
 
-  /** 撤销删除 */
-  var handleUndo = useCallback(() => {
+  /** 撤销删除：将备份数据重新写入文件 */
+  var handleUndo = useCallback(async () => {
     if (!undoToast) return
     clearTimeout(undoToast.timer)
     clearInterval(undoToast.intervalId)
-    // 将已移除的 item 放回列表
-    setItems(prev => [...prev, undoToast.removedItem])
+    var restored = undoToast.removedItem
+    await window.api.prompts.save({
+      id: restored.id,
+      name: restored.name,
+      tag: restored.tag,
+      content: restored.content,
+      isPinned: restored.isPinned,
+    })
+    loadItems()
     setUndoToast(null)
-  }, [undoToast])
+  }, [undoToast, loadItems])
 
-  /** 立即永久删除（关闭 toast） */
+  /** 关闭 toast（数据已在文件中删除，无需额外操作） */
   var handleForceDelete = useCallback(() => {
     if (!undoToast) return
     clearTimeout(undoToast.timer)
     clearInterval(undoToast.intervalId)
-    window.api.prompts.delete(undoToast.itemId)
     setUndoToast(null)
   }, [undoToast])
 

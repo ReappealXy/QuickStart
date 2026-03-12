@@ -2340,12 +2340,13 @@ function setupIPC(): void {
    */
   ipcMain.handle('prompts:list', () => {
     var filePath = getPromptsFilePath()
-    var list = safeReadJSON<unknown[]>(filePath, [])
-    if (!Array.isArray(list) || list.length === 0) {
+    // 仅文件不存在时写入默认数据；已存在的空列表视为用户已清空
+    if (!existsSync(filePath)) {
       safeWriteJSON(filePath, PROMPTS_DEFAULT)
       return PROMPTS_DEFAULT
     }
-    return list
+    var list = safeReadJSON<unknown[]>(filePath, [])
+    return Array.isArray(list) ? list : []
   })
 
   /**
@@ -2360,6 +2361,9 @@ function setupIPC(): void {
         var idx = list.findIndex(p => p.id === prompt.id)
         if (idx >= 0) {
           list[idx] = { ...list[idx], name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? list[idx].isPinned }
+        } else {
+          // id 存在但列表中找不到（撤销删除等场景），追加回去
+          list.push({ id: prompt.id, name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? false, createdAt: Date.now() })
         }
       } else {
         var newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)

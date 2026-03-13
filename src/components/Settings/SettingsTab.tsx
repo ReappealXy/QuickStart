@@ -6,7 +6,8 @@ import {
   FolderOpen, RotateCcw, Loader2, FolderSync, Sparkles,
   Eye, EyeOff, Save, ChevronDown, Plus, GripVertical,
   Pencil, Trash2, Power, X, RefreshCw, Settings2, AlertTriangle,
-  Download, Calendar, FileDown, FileText, ListChecks, ClipboardList, BookText
+  Download, Calendar, FileDown, FileText, ListChecks, ClipboardList, BookText,
+  Sun, Moon, Monitor
 } from 'lucide-react'
 
 /* ─── Clear Undo Toast Type ─── */
@@ -981,12 +982,14 @@ function ExportSection({ isDark, glassCard, setToast }: {
   )
 }
 
-/* ─── General Section: Auto-start + Restart ─── */
+/* ─── General Section: Auto-start + Restart + Theme ─── */
 function GeneralSection({ isDark, glassCard, setToast }: {
   isDark: boolean
   glassCard: Record<string, unknown>
   setToast: (msg: string) => void
 }) {
+  var currentTheme = useSettingsStore((s) => s.theme)
+  var setTheme = useSettingsStore((s) => s.setTheme)
   const [autoStart, setAutoStart] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -1021,6 +1024,40 @@ function GeneralSection({ isDark, glassCard, setToast }: {
       </h3>
       <div style={{ ...glassCard as React.CSSProperties, padding: '6px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {/* Theme toggle */}
+          <div
+            className="flex items-center justify-between transition-all"
+            style={{ padding: '9px 12px', borderRadius: '10px' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.015)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '' }}
+          >
+            <div className="flex items-center gap-2">
+              {currentTheme === 'dark' ? <Moon size={13} style={{ color: '#8b5cf6' }} /> : currentTheme === 'system' ? <Monitor size={13} style={{ color: '#667eea' }} /> : <Sun size={13} style={{ color: '#f59e0b' }} />}
+              <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400 font-medium">外观主题</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {([['light', '浅色'], ['dark', '深色'], ['system', '跟随']] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => { setTheme(val); setToast(`已切换为${label}主题`) }}
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: currentTheme === val ? (val === 'dark' ? '#8b5cf6' : '#667eea') : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                    color: currentTheme === val ? '#fff' : (isDark ? '#a1a1aa' : '#71717a'),
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Auto-start toggle */}
           <div
             className="flex items-center justify-between transition-all"
@@ -1075,7 +1112,8 @@ function GeneralSection({ isDark, glassCard, setToast }: {
 }
 
 export default function SettingsTab() {
-  const isDark = false // Fixed light mode
+  var themeFromStore = useSettingsStore((s) => s.theme)
+  var isDark = themeFromStore === 'dark' || (themeFromStore === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   // ── Workspace state ──
   const workspaces = useSettingsStore((s) => s.workspaces)
@@ -1629,7 +1667,7 @@ export default function SettingsTab() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] font-bold text-zinc-700 dark:text-zinc-200">QuickStart</p>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v0.6.4 · 桌面快捷效率工具</p>
+            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">v1.0.0 · 桌面快捷效率工具</p>
             <button
               onClick={() => window.api.shell.openExternal('https://github.com/ReappealXy/QuickStart')}
               className="inline-flex items-center gap-1 mt-1 text-[9px] font-medium transition-all cursor-pointer"

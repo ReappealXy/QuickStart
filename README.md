@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.7.0-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.0-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -131,6 +131,30 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 ---
 
 ## 版本更新
+
+### v1.0.0 (2026-03-13)
+
+#### 🎯 大更新：日历与清单体验全面升级
+
+- **清单日历布局重构** —— 上下分层彻底消除日期与任务色条重叠
+  - 上层：固定高度日期区（公历数字 + 农历/节气/传统节日）
+  - 下层：独立任务色条区，永不与日期重叠
+  - 农历显示：初一、廿五等；节气：立春、春分等（绿色）；传统节日：春节、元宵节等（红色）
+  - 法定节假日：接入 NateScarlet/holiday-cn，休/班徽章（红/橙）标注调休与假期
+
+<p align="center">
+  <img src="screenshots/v1.0.0-calendar-main.png" width="360" alt="清单日历（农历+节假日）">
+</p>
+
+- **桌面便签日历同步** —— 便签浮动窗口日历采用相同上下分层 + 农历/节气显示，与主应用风格统一
+
+<p align="center">
+  <img src="screenshots/v1.0.0-floating-calendar.png" width="280" alt="便签日历">
+</p>
+
+- **清单删除撤销** —— 点击删除立即移除，底部 30 秒撤销 Toast，可恢复并保存；删除按钮改为 X 图标 + hover 红底
+- **便签固定锁定** —— 点击图钉固定后，禁用窗口拖拽、边框缩放、最小化、关闭，仅图钉可点击取消固定
+- **新建任务默认日期** —— 在日历选中某日时新建任务，默认开始日期为该日而非今天
 
 ### v0.7.0 (2026-03-11)
 
@@ -266,7 +290,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 0.7.0.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 1.0.0.exe`。
 
 安装过程支持：
 - 自定义安装目录

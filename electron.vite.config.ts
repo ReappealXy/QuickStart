@@ -27,11 +27,15 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
+    optimizeDeps: {
+      include: ['lunar-javascript'],
+    },
     build: {
       outDir: 'out/renderer',
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'index.html')
+          index: resolve(__dirname, 'index.html'),
+          floating: resolve(__dirname, 'floating.html')
         }
       }
     },

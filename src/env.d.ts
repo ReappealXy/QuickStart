@@ -23,8 +23,11 @@ interface Window {
       openPath(filePath: string): Promise<void>
     }
     todos: {
-      load(date: string): Promise<TodoDay>
-      save(date: string, data: TodoDay): Promise<{ success: boolean }>
+      list(): Promise<TodoItem[]>
+      add(item: Omit<TodoItem, 'id' | 'createdAt' | 'order'>): Promise<{ success: boolean; id?: string }>
+      update(id: string, partial: Partial<TodoItem>): Promise<{ success: boolean }>
+      delete(id: string): Promise<{ success: boolean }>
+      reorder(ids: string[]): Promise<{ success: boolean }>
       monthSummary(yearMonth: string): Promise<Record<string, { total: number; done: number }>>
       export(startDate: string, endDate: string, format: 'md' | 'pdf'): Promise<{ success: boolean; filePath?: string; count?: number; canceled?: boolean; error?: string }>
     }
@@ -81,6 +84,18 @@ interface Window {
       hide(): void
       minimize(): void
       togglePin(): void
+    }
+    floating: {
+      create(): Promise<{ success: boolean }>
+      close(): Promise<{ success: boolean }>
+      setOpacity(value: number): Promise<{ success: boolean }>
+      isOpen(): Promise<boolean>
+      setPinned(pinned: boolean): Promise<{ success: boolean; pinned: boolean }>
+      isPinned(): Promise<boolean>
+      setAutoShow(enabled: boolean): Promise<{ success: boolean; enabled: boolean }>
+      getAutoShow(): Promise<boolean>
+      getBounds(): Promise<{ x: number; y: number; width: number; height: number }>
+      setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<{ success: boolean }>
     }
     app: {
       getAutoStart(): Promise<boolean>
@@ -171,12 +186,17 @@ interface NoteMeta {
   statusIcon?: string
 }
 
+type Quadrant = 'urgent-important' | 'important' | 'urgent' | 'normal'
+
 interface TodoItem {
   id: string
-  content: string
+  title: string
+  description: string
   done: boolean
   color: string | null
-  time: string | null
+  quadrant: Quadrant | null
+  startDate: string
+  endDate: string | null
   order: number
   createdAt: string
   doneAt?: string
@@ -185,9 +205,8 @@ interface TodoItem {
   completedDuration?: number
 }
 
-interface TodoDay {
-  date: string
-  archived: boolean
+interface TodoStore {
+  version: number
   items: TodoItem[]
 }
 

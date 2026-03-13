@@ -26,6 +26,7 @@ import {
   unlinkSync
 } from 'fs'
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync, createHash } from 'crypto'
+import koffi from 'koffi'
 
 // ============================================================
 // Custom Protocol — register BEFORE app.ready
@@ -48,6 +49,7 @@ protocol.registerSchemesAsPrivileged([
 // ============================================================
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let floatingWindow: BrowserWindow | null = null
 
 // ============================================================
 // Single Instance Lock
@@ -566,6 +568,157 @@ function toggleWindow(): void {
 }
 
 // ============================================================
+// Floating Window
+// ============================================================
+
+// 桌面便签是否固定到桌面底层
+let floatingPinned = true
+
+/**
+ * 从配置读取便签自动显示设置
+ * @return 是否自动显示
+ */
+function getFloatingAutoShow(): boolean {
+  var cfg = readConfig() as Record<string, unknown>
+  return cfg.floatingAutoShow === true
+}
+
+/**
+ * 保存便签自动显示设置到配置
+ * @param enabled 是否开启
+ */
+function setFloatingAutoShow(enabled: boolean): void {
+  var c = readConfig() as Record<string, unknown>
+  c.floatingAutoShow = enabled
+  writeConfig(c as ConfigV3)
+}
+
+/**
+ * 应用固定模式到浮动窗口
+ * 固定=桌面小组件效果：不置顶（不遮挡其他窗口），但 Win+D 不消失
+ */
+function applyPinMode(): void {
+  if (!floatingWindow || floatingWindow.isDestroyed()) return
+  floatingWindow.setAlwaysOnTop(false)
+  floatingWindow.setSkipTaskbar(true)
+}
+
+/**
+ * 将窗口挂载为桌面 SHELLDLL_DefView 的子窗口
+ * 挂载后窗口属于桌面层，Win+D 不会影响
+ * @param win 要挂载的 BrowserWindow
+ */
+function attachToDesktop(win: BrowserWindow): void {
+  if (process.platform !== 'win32') return
+  try {
+    var user32 = koffi.load('user32.dll')
+    // koffi 文档：Numbers / BigInt / null 均可作为 void* 参数传递
+    var FindWindowExA = user32.func('void* __stdcall FindWindowExA(void*, void*, const char*, const char*)')
+    var GetDesktopWindow = user32.func('void* __stdcall GetDesktopWindow()')
+    var SetWindowLongPtrA = user32.func('long long __stdcall SetWindowLongPtrA(void*, int, void*)')
+
+    // 先在 Progman 下查找 SHELLDLL_DefView
+    var progman = FindWindowExA(null, null, 'Progman', null)
+    var defView = FindWindowExA(progman, null, 'SHELLDLL_DefView', null)
+
+    // 若不在 Progman 下，遍历 WorkerW 窗口查找
+    if (!defView) {
+      var desktop = GetDesktopWindow()
+      var workerW = FindWindowExA(desktop, null, 'WorkerW', null)
+      while (workerW && !defView) {
+        defView = FindWindowExA(workerW, null, 'SHELLDLL_DefView', null)
+        if (!defView) workerW = FindWindowExA(desktop, workerW, 'WorkerW', null)
+      }
+    }
+
+    if (defView) {
+      var GWLP_HWNDPARENT = -8
+      var hwndBuf = win.getNativeWindowHandle()
+      // getNativeWindowHandle() 返回 Buffer（x64: 8 字节），读取为 BigInt 传入 void*
+      var hwndVal = hwndBuf.length >= 8 ? hwndBuf.readBigUInt64LE() : BigInt(hwndBuf.readUInt32LE())
+      SetWindowLongPtrA(hwndVal, GWLP_HWNDPARENT, defView)
+      console.log('[FloatingWindow] attachToDesktop: success')
+    } else {
+      console.warn('[FloatingWindow] attachToDesktop: SHELLDLL_DefView not found')
+    }
+  } catch (err) {
+    console.error('[FloatingWindow] attachToDesktop failed:', err)
+  }
+}
+
+/**
+ * 创建或显示桌面浮动窗口
+ * 固定模式下：始终可见，Win+D / 失焦不隐藏
+ */
+function createFloatingWindow(): void {
+  if (floatingWindow && !floatingWindow.isDestroyed()) {
+    floatingWindow.show()
+    floatingWindow.focus()
+    return
+  }
+
+  var cfg = readConfig() as Record<string, unknown>
+  var savedBounds = cfg.floatingBounds as { x: number; y: number; width: number; height: number } | undefined
+  var display = screen.getPrimaryDisplay()
+  var { width: sw, height: sh } = display.workAreaSize
+
+  var winW = savedBounds?.width || 340
+  var winH = savedBounds?.height || 480
+  var winX = savedBounds?.x ?? Math.round(sw - winW - 40)
+  var winY = savedBounds?.y ?? Math.round((sh - winH) / 2)
+
+  floatingWindow = new BrowserWindow({
+    width: winW,
+    height: winH,
+    x: winX,
+    y: winY,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: false,
+    skipTaskbar: true,
+    resizable: true,
+    minWidth: 260,
+    minHeight: 280,
+    show: false,
+    focusable: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+    var devUrl = process.env['ELECTRON_RENDERER_URL']
+    floatingWindow.loadURL(devUrl.replace(/\/index\.html$/, '/floating.html').replace(/\/$/, '') + '/floating.html')
+  } else {
+    floatingWindow.loadFile(join(__dirname, '../renderer/floating.html'))
+  }
+
+  floatingWindow.once('ready-to-show', () => {
+    if (floatingWindow && !floatingWindow.isDestroyed()) {
+      floatingWindow.show()
+      applyPinMode()
+      attachToDesktop(floatingWindow)
+    }
+  })
+
+  floatingWindow.on('close', (e) => {
+    e.preventDefault()
+    if (floatingWindow && !floatingWindow.isDestroyed()) {
+      var bounds = floatingWindow.getBounds()
+      var c = readConfig() as Record<string, unknown>
+      c.floatingBounds = bounds
+      writeConfig(c as ConfigV3)
+      floatingWindow.hide()
+    }
+  })
+
+  floatingWindow.on('closed', () => { floatingWindow = null })
+}
+
+// ============================================================
 // System Tray
 // ============================================================
 async function createTray(): Promise<void> {
@@ -611,6 +764,7 @@ function rebuildTrayMenu(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '显示窗口', click: showWindow },
+      { label: '桌面便签', click: () => createFloatingWindow() },
       { type: 'separator' },
       {
         label: '开机自启动',
@@ -810,6 +964,64 @@ function setupIPC(): void {
   ipcMain.on('window:toggle-pin', () => {
     if (!mainWindow) return
     mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop())
+  })
+
+  // ---- Floating Window ----
+  ipcMain.handle('floating:create', () => {
+    createFloatingWindow()
+    return { success: true }
+  })
+
+  ipcMain.handle('floating:close', () => {
+    if (floatingWindow && !floatingWindow.isDestroyed()) floatingWindow.hide()
+    return { success: true }
+  })
+
+  ipcMain.handle('floating:setOpacity', (_e, value: number) => {
+    if (floatingWindow && !floatingWindow.isDestroyed()) {
+      floatingWindow.setOpacity(Math.max(0.2, Math.min(1, value)))
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle('floating:isOpen', () => {
+    return floatingWindow !== null && !floatingWindow.isDestroyed() && floatingWindow.isVisible()
+  })
+
+  ipcMain.handle('floating:setPinned', (_e, pinned: boolean) => {
+    floatingPinned = pinned
+    // 固定=桌面小组件，不置顶；关闭固定=普通窗口
+    if (floatingWindow && !floatingWindow.isDestroyed()) {
+      floatingWindow.setAlwaysOnTop(false)
+    }
+    return { success: true, pinned }
+  })
+
+  ipcMain.handle('floating:isPinned', () => {
+    return floatingPinned
+  })
+
+  ipcMain.handle('floating:setAutoShow', (_e, enabled: boolean) => {
+    setFloatingAutoShow(enabled)
+    return { success: true, enabled }
+  })
+
+  ipcMain.handle('floating:getAutoShow', () => {
+    return getFloatingAutoShow()
+  })
+
+  ipcMain.handle('floating:getBounds', () => {
+    if (floatingWindow && !floatingWindow.isDestroyed()) {
+      return floatingWindow.getBounds()
+    }
+    return { x: 0, y: 0, width: 340, height: 480 }
+  })
+
+  ipcMain.handle('floating:setBounds', (_e, bounds: { x: number; y: number; width: number; height: number }) => {
+    if (floatingWindow && !floatingWindow.isDestroyed()) {
+      floatingWindow.setBounds(bounds)
+    }
+    return { success: true }
   })
 
   // ---- Auto Start & Restart ----
@@ -1334,47 +1546,187 @@ function setupIPC(): void {
     }
   })
 
-  // ---- Todos Export (global, not workspace-scoped) ----
+  // ---- Todos v2 (single-file storage with date ranges) ----
+
+  /**
+   * 获取 todos.json 文件路径
+   * @return 完整路径
+   */
+  function getTodosFilePath(): string {
+    var dir = getTodosDir()
+    return join(dir, 'todos.json')
+  }
+
+  /**
+   * 读取全部任务列表
+   * @return TodoItem[]
+   */
+  function readAllTodos(): { id: string; title: string; description: string; done: boolean; color: string | null; quadrant: string | null; startDate: string; endDate: string | null; order: number; createdAt: string; doneAt?: string; timerLimit?: number; timerSpent?: number; completedDuration?: number }[] {
+    var filePath = getTodosFilePath()
+    if (!existsSync(filePath)) return []
+    var store = safeReadJSON<{ version?: number; items?: unknown[] }>(filePath, { items: [] })
+    return (Array.isArray(store.items) ? store.items : []) as any[]
+  }
+
+  /**
+   * 写入全部任务列表
+   * @param items 任务数组
+   */
+  function writeAllTodos(items: unknown[]): void {
+    safeWriteJSON(getTodosFilePath(), { version: 2, items })
+  }
+
+  ipcMain.handle('todos:list', () => readAllTodos())
+
+  /**
+   * 新增任务
+   * @param item 不含 id/createdAt/order 的任务数据
+   * @return { success, id }
+   */
+  ipcMain.handle('todos:add', (_e, item: { title: string; description?: string; done?: boolean; color?: string | null; quadrant?: string | null; startDate?: string; endDate?: string | null }) => {
+    try {
+      var list = readAllTodos()
+      var id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+      var today = new Date().toISOString().slice(0, 10)
+      var newItem = {
+        id,
+        title: item.title || '',
+        description: item.description || '',
+        done: item.done || false,
+        color: item.color || null,
+        quadrant: item.quadrant || null,
+        startDate: item.startDate || today,
+        endDate: item.endDate || null,
+        order: list.length,
+        createdAt: new Date().toISOString(),
+      }
+      list.push(newItem)
+      writeAllTodos(list)
+      return { success: true, id }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /**
+   * 更新单条任务
+   * @param id 任务 ID
+   * @param partial 要更新的字段
+   */
+  ipcMain.handle('todos:update', (_e, id: string, partial: Record<string, unknown>) => {
+    try {
+      var list = readAllTodos()
+      var idx = list.findIndex(t => t.id === id)
+      if (idx < 0) return { success: false, error: 'not found' }
+      list[idx] = { ...list[idx], ...partial }
+      writeAllTodos(list)
+      return { success: true }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /** @param id 要删除的任务 ID */
+  ipcMain.handle('todos:delete', (_e, id: string) => {
+    try {
+      var list = readAllTodos()
+      writeAllTodos(list.filter(t => t.id !== id))
+      return { success: true }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /**
+   * 批量重排序
+   * @param ids 有序 ID 数组
+   */
+  ipcMain.handle('todos:reorder', (_e, ids: string[]) => {
+    try {
+      var list = readAllTodos()
+      var map = new Map(list.map(t => [t.id, t]))
+      var ordered = ids.map((id, i) => {
+        var item = map.get(id)
+        if (item) { item.order = i; map.delete(id) }
+        return item
+      }).filter(Boolean)
+      // 追加不在 ids 中的项
+      var remaining = [...map.values()]
+      remaining.forEach((t, i) => { t!.order = ordered.length + i })
+      writeAllTodos([...ordered, ...remaining])
+      return { success: true }
+    } catch (err) { return { success: false, error: String(err) } }
+  })
+
+  /**
+   * 按月汇总任务数据（基于 startDate 维度）
+   * @param yearMonth YYYY-MM 格式
+   * @return { [date]: { total, done } }
+   */
+  ipcMain.handle('todos:monthSummary', (_e, yearMonth: string) => {
+    try {
+      var list = readAllTodos()
+      var summary: Record<string, { total: number; done: number }> = {}
+      list.forEach(item => {
+        var start = item.startDate || ''
+        var end = item.endDate || start
+        if (!start) return
+        // 遍历任务覆盖的每一天
+        var cur = start
+        while (cur <= end && cur.slice(0, 7) <= yearMonth) {
+          if (cur.startsWith(yearMonth)) {
+            if (!summary[cur]) summary[cur] = { total: 0, done: 0 }
+            summary[cur].total++
+            if (item.done) summary[cur].done++
+          }
+          // 下一天
+          var d = new Date(cur + 'T00:00:00')
+          d.setDate(d.getDate() + 1)
+          cur = d.toISOString().slice(0, 10)
+        }
+      })
+      return summary
+    } catch { return {} }
+  })
+
+  /**
+   * 导出任务为 Markdown 或 PDF
+   * @param startDate 起始日期
+   * @param endDate 结束日期
+   * @param format md | pdf
+   */
   ipcMain.handle('todos:export', async (_e, startDate: string, endDate: string, format: 'md' | 'pdf') => {
     if (!mainWindow) return { success: false, error: 'no window' }
     try {
-      const todosDir = getTodosDir()
-      if (!existsSync(todosDir)) return { success: false, error: '选定日期范围内没有清单' }
+      var list = readAllTodos()
+      // 筛选日期范围内有交集的任务
+      var filtered = list.filter(item => {
+        var s = item.startDate || ''
+        var e = item.endDate || s
+        return s <= endDate && e >= startDate
+      })
+      if (filtered.length === 0) return { success: false, error: '选定日期范围内没有清单' }
 
-      // Collect todo files in range
-      const files = readdirSync(todosDir).filter((f) => f.endsWith('.json'))
-      const todos: { date: string; items: { text: string; done: boolean; color?: string }[] }[] = []
-      for (const file of files) {
-        const date = file.replace('.json', '')
-        if (date >= startDate && date <= endDate) {
-          const data = safeReadJSON<{ items?: { text?: string; done?: boolean; color?: string }[] }>(join(todosDir, file), { items: [] })
-          const items = (data.items || []).filter((i) => i.text)
-          if (items.length > 0) {
-            todos.push({ date, items: items.map((i) => ({ text: i.text || '', done: !!i.done, color: i.color })) })
-          }
-        }
-      }
-      if (todos.length === 0) return { success: false, error: '选定日期范围内没有清单' }
-      todos.sort((a, b) => a.date.localeCompare(b.date))
+      // 按 startDate 分组
+      var groups = new Map<string, typeof filtered>()
+      filtered.forEach(item => {
+        var key = item.startDate || 'unknown'
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key)!.push(item)
+      })
+      var sortedDates = [...groups.keys()].sort()
 
-      const defaultName = startDate === endDate
+      var defaultName = startDate === endDate
         ? `QuickStart_Todos_${startDate}`
         : `QuickStart_Todos_${startDate}_${endDate}`
 
-      // Build markdown
-      let mdContent = ''
-      let totalItems = 0
-      for (const day of todos) {
+      var mdContent = ''
+      var totalItems = 0
+      sortedDates.forEach(date => {
         if (mdContent) mdContent += '\n\n---\n\n'
-        mdContent += `# ${day.date}\n\n`
-        for (const item of day.items) {
-          mdContent += `- [${item.done ? 'x' : ' '}] ${item.text}\n`
+        mdContent += `# ${date}\n\n`
+        groups.get(date)!.forEach(item => {
+          mdContent += `- [${item.done ? 'x' : ' '}] ${item.title}${item.endDate ? ` (→${item.endDate})` : ''}\n`
           totalItems++
-        }
-      }
+        })
+      })
 
       if (format === 'md') {
-        const result = await dialog.showSaveDialog(mainWindow, {
+        var result = await dialog.showSaveDialog(mainWindow, {
           title: '导出清单 Markdown',
           defaultPath: `${defaultName}.md`,
           filters: [{ name: 'Markdown', extensions: ['md'] }],
@@ -1385,17 +1737,16 @@ function setupIPC(): void {
       }
 
       if (format === 'pdf') {
-        const result = await dialog.showSaveDialog(mainWindow, {
+        var result2 = await dialog.showSaveDialog(mainWindow, {
           title: '导出清单 PDF',
           defaultPath: `${defaultName}.pdf`,
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
         })
-        if (result.canceled || !result.filePath) return { success: false, canceled: true }
-
-        const MarkdownIt = require('markdown-it')
-        const md = new MarkdownIt({ html: true, breaks: true })
-        const htmlBody = md.render(mdContent.trim())
-        const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        if (result2.canceled || !result2.filePath) return { success: false, canceled: true }
+        var MarkdownIt = require('markdown-it')
+        var md = new MarkdownIt({ html: true, breaks: true })
+        var htmlBody = md.render(mdContent.trim())
+        var fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.8; font-size: 14px; max-width: 700px; margin: 0 auto; }
           h1 { font-size: 20px; color: #6d28d9; border-bottom: 2px solid #ede9fe; padding-bottom: 8px; margin-top: 32px; }
           hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
@@ -1403,66 +1754,16 @@ function setupIPC(): void {
           li { margin-bottom: 6px; position: relative; padding-left: 8px; }
           li input[type="checkbox"] { margin-right: 8px; }
         </style></head><body>${htmlBody}</body></html>`
-
-        const pdfWin = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { contextIsolation: true } })
+        var pdfWin = new BrowserWindow({ show: false, width: 800, height: 600, webPreferences: { contextIsolation: true } })
         await pdfWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`)
-        const pdfData = await pdfWin.webContents.printToPDF({ printBackground: true, marginsType: 0, pageSize: 'A4' })
+        var pdfData = await pdfWin.webContents.printToPDF({ printBackground: true, marginsType: 0, pageSize: 'A4' })
         pdfWin.destroy()
-        writeFileSync(result.filePath, pdfData)
-        return { success: true, filePath: result.filePath, count: totalItems }
+        writeFileSync(result2.filePath, pdfData)
+        return { success: true, filePath: result2.filePath, count: totalItems }
       }
 
       return { success: false, error: '不支持的格式' }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
-  })
-
-  // ---- Todos (global, not workspace-scoped) ----
-  ipcMain.handle('todos:load', (_e, date: string) => {
-    const todosDir = getTodosDir()
-    const p = join(todosDir, `${date}.json`)
-    return safeReadJSON(p, { date, archived: false, items: [] })
-  })
-
-  ipcMain.handle('todos:save', (_e, date: string, data: unknown) => {
-    try {
-      const todosDir = getTodosDir()
-      const p = join(todosDir, `${date}.json`)
-      safeWriteJSON(p, data)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
-  })
-
-  // Return summary for a month: { [date]: { total, done } }
-  ipcMain.handle('todos:monthSummary', (_e, yearMonth: string) => {
-    try {
-      const todosDir = getTodosDir()
-      if (!existsSync(todosDir)) return {}
-      const files = readdirSync(todosDir).filter(
-        (f) => f.startsWith(yearMonth) && f.endsWith('.json')
-      )
-      const summary: Record<string, { total: number; done: number }> = {}
-      for (const file of files) {
-        const date = file.replace('.json', '')
-        const data = safeReadJSON<{ items?: { done?: boolean }[] }>(
-          join(todosDir, file),
-          { items: [] }
-        )
-        const items = data.items || []
-        if (items.length > 0) {
-          summary[date] = {
-            total: items.length,
-            done: items.filter((i) => i.done).length
-          }
-        }
-      }
-      return summary
-    } catch {
-      return {}
-    }
+    } catch (err) { return { success: false, error: String(err) } }
   })
 
   // ---- Config ----
@@ -2668,6 +2969,11 @@ app.whenReady().then(async () => {
     if (hotkey !== 'Ctrl+Shift+Q') {
       globalShortcut.register('Ctrl+Shift+Q', toggleWindow)
     }
+  }
+
+  // 自动显示桌面便签（如果用户开启了持久化）
+  if (getFloatingAutoShow()) {
+    setTimeout(() => createFloatingWindow(), 1500)
   }
 })
 

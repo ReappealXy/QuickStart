@@ -24,8 +24,11 @@ contextBridge.exposeInMainWorld('api', {
     openPath: (filePath: string) => ipcRenderer.invoke('notes:openPath', filePath),
   },
   todos: {
-    load: (date: string) => ipcRenderer.invoke('todos:load', date),
-    save: (date: string, data: unknown) => ipcRenderer.invoke('todos:save', date, data),
+    list: () => ipcRenderer.invoke('todos:list'),
+    add: (item: Record<string, unknown>) => ipcRenderer.invoke('todos:add', item),
+    update: (id: string, partial: Record<string, unknown>) => ipcRenderer.invoke('todos:update', id, partial),
+    delete: (id: string) => ipcRenderer.invoke('todos:delete', id),
+    reorder: (ids: string[]) => ipcRenderer.invoke('todos:reorder', ids),
     monthSummary: (yearMonth: string) => ipcRenderer.invoke('todos:monthSummary', yearMonth),
     export: (startDate: string, endDate: string, format: 'md' | 'pdf') =>
       ipcRenderer.invoke('todos:export', startDate, endDate, format),
@@ -92,7 +95,19 @@ contextBridge.exposeInMainWorld('api', {
   window: {
     hide: () => ipcRenderer.send('window:hide'),
     minimize: () => ipcRenderer.send('window:minimize'),
-    togglePin: () => ipcRenderer.send('window:toggle-pin')
+    togglePin: () => ipcRenderer.send('window:toggle-pin'),
+  },
+  floating: {
+    create: () => ipcRenderer.invoke('floating:create'),
+    close: () => ipcRenderer.invoke('floating:close'),
+    setOpacity: (value: number) => ipcRenderer.invoke('floating:setOpacity', value),
+    isOpen: () => ipcRenderer.invoke('floating:isOpen'),
+    setPinned: (pinned: boolean) => ipcRenderer.invoke('floating:setPinned', pinned),
+    isPinned: () => ipcRenderer.invoke('floating:isPinned'),
+    setAutoShow: (enabled: boolean) => ipcRenderer.invoke('floating:setAutoShow', enabled),
+    getAutoShow: () => ipcRenderer.invoke('floating:getAutoShow'),
+    getBounds: () => ipcRenderer.invoke('floating:getBounds'),
+    setBounds: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('floating:setBounds', bounds),
   },
   app: {
     getAutoStart: () => ipcRenderer.invoke('app:getAutoStart'),

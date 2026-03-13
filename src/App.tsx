@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import TitleBar from './components/Layout/TitleBar'
 import TabBar from './components/Layout/TabBar'
 import NotesTab from './components/Notes/NotesTab'
-import TodoTab from './components/Todo/TodoTab'
+import ErrorBoundary from './components/ErrorBoundary'
+
+var TodoTab = lazy(() => import('./components/Todo/TodoTab'))
 import TranslatorTab from './components/Translator/TranslatorTab'
 import AITab from './components/AI/AITab'
 import ClipboardTab from './components/Clipboard/ClipboardTab'
@@ -37,8 +39,8 @@ export default function App() {
       onFinished: (taskName, duration) => {
         setTimerFinishedModal({ taskName, duration })
       },
-      onUpdateTask: async (taskId, taskDate, updates) => {
-        await useTodoStore.getState().updateItemForDate(taskDate, taskId, updates)
+      onUpdateTask: async (taskId, _taskDate, updates) => {
+        await useTodoStore.getState().updateItem(taskId, updates)
       },
     })
   }, [setTimerFinishedModal])
@@ -53,15 +55,29 @@ export default function App() {
     return () => stopGlobalTimerTick()
   }, [activeTimerId])
 
+  var theme = useSettingsStore((s) => s.theme)
+
+  useEffect(() => { loadConfig() }, [loadConfig])
+
+  // 主题跟随 store
   useEffect(() => {
-    loadConfig()
-    // Ensure always light mode
-    document.documentElement.classList.remove('dark')
-  }, [loadConfig])
+    var applyTheme = (dark: boolean) => {
+      if (dark) document.documentElement.classList.add('dark')
+      else document.documentElement.classList.remove('dark')
+    }
+    if (theme === 'system') {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)')
+      applyTheme(mq.matches)
+      var handler = (e: MediaQueryListEvent) => applyTheme(e.matches)
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    }
+    applyTheme(theme === 'dark')
+  }, [theme])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.api.window.hide()
+      if (e.key === 'Escape') window.api?.window?.hide?.()
       if (e.ctrlKey && e.key >= '1' && e.key <= '3') {
         e.preventDefault()
         const tabs = ['notes', 'todo', 'tools'] as const
@@ -76,7 +92,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const isDark = document.documentElement.classList.contains('dark')
+  var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   return (
     <div className="h-full flex flex-col overflow-hidden"
@@ -88,7 +104,13 @@ export default function App() {
       <TabBar />
       <div className="flex-1 overflow-hidden animate-fadeIn">
         {activeTab === 'notes' && <NotesTab />}
-        {activeTab === 'todo' && <TodoTab />}
+        {activeTab === 'todo' && (
+          <ErrorBoundary>
+            <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: '#a1a1aa', fontSize: '13px' }}>加载中…</div>}>
+              <TodoTab />
+            </Suspense>
+          </ErrorBoundary>
+        )}
         {activeTab === 'tools' && <ToolsTab />}
         {activeTab === 'translate' && (
           <div className="flex flex-col h-full">

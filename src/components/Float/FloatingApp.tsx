@@ -214,7 +214,11 @@ export default function FloatingApp() {
     items.filter(t => {
       var s = t.startDate || ''
       var e = t.endDate || s
-      return s <= monthEnd && e >= monthStart
+      if (s > monthEnd || e < monthStart) return false
+      // 单日任务（无结束日期或结束日等于开始日）且已完成 → 不显示
+      var isSingleDay = !t.endDate || t.endDate === t.startDate
+      if (isSingleDay && t.done) return false
+      return true
     }).slice(0, 30),
   [items, monthStart, monthEnd])
 

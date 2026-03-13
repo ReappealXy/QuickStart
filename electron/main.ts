@@ -50,6 +50,7 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let floatingWindow: BrowserWindow | null = null
+let isQuitting = false
 
 // ============================================================
 // Single Instance Lock
@@ -646,6 +647,15 @@ function attachToDesktop(win: BrowserWindow): void {
   }
 }
 
+/** 将浮动窗口当前 bounds 持久化到配置文件 */
+function saveFloatingBounds(): void {
+  if (!floatingWindow || floatingWindow.isDestroyed()) return
+  var bounds = floatingWindow.getBounds()
+  var c = readConfig() as Record<string, unknown>
+  c.floatingBounds = bounds
+  writeConfig(c as ConfigV3)
+}
+
 /**
  * 创建或显示桌面浮动窗口
  * 固定模式下：始终可见，Win+D / 失焦不隐藏
@@ -705,17 +715,24 @@ function createFloatingWindow(): void {
   })
 
   floatingWindow.on('close', (e) => {
+    if (isQuitting) return
     e.preventDefault()
     if (floatingWindow && !floatingWindow.isDestroyed()) {
-      var bounds = floatingWindow.getBounds()
-      var c = readConfig() as Record<string, unknown>
-      c.floatingBounds = bounds
-      writeConfig(c as ConfigV3)
+      saveFloatingBounds()
       floatingWindow.hide()
     }
   })
 
   floatingWindow.on('closed', () => { floatingWindow = null })
+
+  // 拖拽/调整大小结束时持久化 bounds
+  var boundsSaveTimer: ReturnType<typeof setTimeout> | null = null
+  var scheduleBoundsSave = (): void => {
+    if (boundsSaveTimer) clearTimeout(boundsSaveTimer)
+    boundsSaveTimer = setTimeout(() => saveFloatingBounds(), 500)
+  }
+  floatingWindow.on('resize', scheduleBoundsSave)
+  floatingWindow.on('move', scheduleBoundsSave)
 }
 
 // ============================================================
@@ -2974,6 +2991,13 @@ app.whenReady().then(async () => {
   // 自动显示桌面便签（如果用户开启了持久化）
   if (getFloatingAutoShow()) {
     setTimeout(() => createFloatingWindow(), 1500)
+  }
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
+  if (floatingWindow && !floatingWindow.isDestroyed()) {
+    saveFloatingBounds()
   }
 })
 

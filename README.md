@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.1-purple?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/electron-40-blue?style=flat-square&logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React">
@@ -131,6 +131,14 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 ---
 
 ## 版本更新
+
+### v1.0.1 (2026-03-11)
+
+- **修复**：打包安装后托盘点击「退出」无法正常退出程序（便签窗口 `close` 事件无条件 `preventDefault` 导致）
+- **修复**：便签窗口尺寸与位置在重启后不持久化（`before-quit` 保存 bounds + `resize`/`move` 防抖保存）
+- **修复**：编辑任务弹窗与导航栏重叠（`TaskEditModal` 用 `createPortal` 挂到 `document.body` 脱离层叠上下文）
+- **优化**：便签任务展示逻辑 —— 单日任务完成后不再显示，未完成单日任务继续显示作为当日提醒
+- **优化**：日历日期悬停 400ms 后弹出浮层，展示当日全部任务（含跨天任务），解决任务过多无法全部展示的问题
 
 ### v1.0.0 (2026-03-13)
 
@@ -290,7 +298,7 @@ QuickStart 是一款基于 **Electron + React + TypeScript** 构建的桌面侧�
 
 ### 下载安装包
 
-前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 1.0.0.exe`。
+前往 [Releases](https://github.com/ReappealXy/QuickStart/releases) 页面，下载最新版本的 `QuickStart Setup 1.0.1.exe`。
 
 安装过程支持：
 - 自定义安装目录

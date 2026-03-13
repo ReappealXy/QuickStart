@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTodoStore } from '../../stores/todoStore'
 // @ts-ignore
@@ -117,6 +118,8 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
   var [month, setMonth] = useState(() => new Date().getMonth())
   var [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null)
   var [holidays, setHolidays] = useState<Map<string, { name: string; isOffDay: boolean }>>(new Map())
+  var [cellPopup, setCellPopup] = useState<{ date: string; x: number; y: number } | null>(null)
+  var cellHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   var todayStr = useMemo(() => {
     var d = new Date()
@@ -138,6 +141,27 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
     })
     return () => { cancelled = true }
   }, [year, month])
+
+  /** 获取某天涵盖的全部任务（用于 hover 弹出） */
+  var getTasksForDate = useCallback((date: string) =>
+    allItems.filter(t => {
+      var s = t.startDate || ''
+      var e = t.endDate || s
+      return s <= date && e >= date
+    }),
+  [allItems])
+
+  var handleCellMouseEnter = useCallback((date: string, e: React.MouseEvent) => {
+    var rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    cellHoverTimer.current = setTimeout(() => {
+      setCellPopup({ date, x: rect.left + rect.width / 2, y: rect.bottom + 6 })
+    }, 400)
+  }, [])
+
+  var handleCellMouseLeave = useCallback(() => {
+    if (cellHoverTimer.current) clearTimeout(cellHoverTimer.current)
+    setCellPopup(null)
+  }, [])
 
   var goPrev = () => {
     if (month === 0) { setYear(year - 1); setMonth(11) }
@@ -237,7 +261,7 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
   }, [taskBars, rows])
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col" style={{ padding: '0 0 4px' }}>
+    <><div className="flex-1 min-h-0 flex flex-col" style={{ padding: '0 0 4px' }}>
       {/* 月份导航 */}
       <div className="flex items-center justify-between" style={{ padding: '4px 0 8px', flexShrink: 0 }}>
         <button onClick={goPrev} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#71717a', padding: '4px' }}>
@@ -320,8 +344,14 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
                         transition: 'background 0.12s',
                         overflow: 'hidden',
                       }}
-                      onMouseEnter={(e) => { if (!isToday) e.currentTarget.style.background = 'rgba(0,0,0,0.015)' }}
-                      onMouseLeave={(e) => { if (!isToday) e.currentTarget.style.background = isToday ? 'rgba(102,126,234,0.04)' : 'transparent' }}
+                      onMouseEnter={(e) => {
+                        if (!isToday) e.currentTarget.style.background = 'rgba(0,0,0,0.015)'
+                        handleCellMouseEnter(cell.date, e)
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isToday) e.currentTarget.style.background = isToday ? 'rgba(102,126,234,0.04)' : 'transparent'
+                        handleCellMouseLeave()
+                      }}
                     >
                       {/* 第一行：日期数字 + 假期徽章 */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
@@ -428,5 +458,56 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
         })}
       </div>
     </div>
-  )
+
+    {/* ── 日期悬停任务弹出层 ──*/}
+    {cellPopup && (() => {
+      var popupTasks = getTasksForDate(cellPopup.date)
+      if (popupTasks.length === 0) return null
+      var popW = 200
+      var left = Math.min(Math.max(cellPopup.x - popW / 2, 8), window.innerWidth - popW - 8)
+      var top = cellPopup.y
+      return createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left,
+            top,
+            width: `${popW}px`,
+            background: 'rgba(255,255,255,0.97)',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+            padding: '8px',
+            zIndex: 99998,
+            pointerEvents: 'none',
+            animation: 'fadeIn 0.15s ease',
+          }}
+        >
+          <p style={{ fontSize: '11px', fontWeight: 700, color: '#71717a', marginBottom: '6px', padding: '0 2px' }}>
+            {cellPopup.date} · {popupTasks.length} 个任务
+          </p>
+          {popupTasks.map(t => (
+            <div key={t.id} style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '4px 6px', borderRadius: '7px', marginBottom: '2px',
+              background: t.done ? 'rgba(0,0,0,0.02)' : 'rgba(102,126,234,0.04)',
+            }}>
+              <span style={{
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: getTaskColor(t.id, t.color),
+                opacity: t.done ? 0.4 : 1,
+              }} />
+              <span style={{
+                fontSize: '12px', color: t.done ? '#a1a1aa' : '#3f3f46',
+                textDecoration: t.done ? 'line-through' : 'none',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {t.title}
+              </span>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )
+    })()}
+  </>)
 }

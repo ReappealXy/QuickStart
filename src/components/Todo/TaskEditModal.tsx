@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 /**
@@ -71,10 +72,10 @@ export default function TaskEditModal({ item, defaultDate, onSave, onClose }: Ta
     background: 'rgba(255,255,255,0.6)',
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 flex items-center justify-center"
-      style={{ zIndex: 9999, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(8px)' }}
+      style={{ zIndex: 99999, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(8px)' }}
       onClick={onClose}
       onKeyDown={handleKeyDown}
     >
@@ -234,6 +235,7 @@ export default function TaskEditModal({ item, defaultDate, onSave, onClose }: Ta
           to { opacity: 1; transform: scale(1) translateY(0); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   )
 }

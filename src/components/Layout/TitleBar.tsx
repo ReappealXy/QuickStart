@@ -1,54 +1,98 @@
-import { useState } from 'react'
-import { Minus, X, Pin, PinOff } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Minus, X, Pin, PinOff, Search, ArrowLeft } from 'lucide-react'
 
-export default function TitleBar() {
+interface TitleBarProps {
+  searchMode: boolean
+  searchQuery: string
+  onSearchChange: (val: string) => void
+  onBack: () => void
+  featureTitle: string
+  onSearchEnter: () => void
+}
+
+export default function TitleBar({
+  searchMode,
+  searchQuery,
+  onSearchChange,
+  onBack,
+  featureTitle,
+  onSearchEnter,
+}: TitleBarProps) {
   const [pinned, setPinned] = useState(true)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (searchMode) inputRef.current?.focus()
+  }, [searchMode])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onSearchEnter()
+    }
+  }
 
   return (
-    <div
-      className="drag-region flex items-center justify-between select-none flex-shrink-0 glass border-b border-white/10 dark:border-white/5"
-      style={{ height: '46px', padding: '0 var(--container-padding)' }}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold"
-          style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-        >
-          Q
-        </div>
-        <span className="text-[11px] font-semibold text-zinc-500 tracking-wide">
-          <span style={{ letterSpacing: '0.5px' }}>Quick</span><span style={{ letterSpacing: '0.5px' }}>Start</span>
-        </span>
-      </div>
+    <div className="qs-titlebar drag-region">
+      {searchMode ? (
+        <>
+          <div className="qs-titlebar-logo">
+            <div className="qs-logo">Q</div>
+          </div>
+          <div className="qs-search-inline no-drag">
+            <Search size={15} className="qs-search-icon" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="搜索功能..."
+              className="qs-search-input"
+              spellCheck={false}
+            />
+            {searchQuery && (
+              <button className="qs-search-clear" onClick={() => onSearchChange('')}>
+                ✕
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="qs-header-nav no-drag">
+            <button className="qs-back-btn" onClick={onBack}>
+              <ArrowLeft size={16} />
+            </button>
+            <span className="qs-header-title">{featureTitle}</span>
+          </div>
+        </>
+      )}
 
-      <div className="flex items-center gap-2 no-drag">
+      <div className="qs-titlebar-actions no-drag">
         <button
           onClick={() => {
             setPinned(!pinned)
             window.api.window.togglePin()
           }}
-          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-            pinned
-              ? 'text-violet-500 bg-violet-500/10 hover:bg-violet-500/20'
-              : 'text-zinc-400 hover:bg-zinc-500/10'
-          }`}
+          className={`qs-titlebar-btn ${pinned ? 'qs-titlebar-btn--active' : ''}`}
           title={pinned ? '取消置顶' : '置顶'}
         >
-          {pinned ? <Pin size={13} /> : <PinOff size={13} />}
+          {pinned ? <Pin size={12} /> : <PinOff size={12} />}
         </button>
         <button
           onClick={() => window.api.window.minimize()}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:bg-zinc-500/10 transition-all"
+          className="qs-titlebar-btn"
           title="最小化"
         >
-          <Minus size={13} />
+          <Minus size={12} />
         </button>
         <button
           onClick={() => window.api.window.hide()}
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-400 hover:bg-red-500/15 hover:text-red-500 transition-all"
+          className="qs-titlebar-btn qs-titlebar-btn--close"
           title="隐藏"
         >
-          <X size={13} />
+          <X size={12} />
         </button>
       </div>
     </div>

@@ -81,6 +81,8 @@ export default function FloatingApp() {
   var [year, setYear] = useState(() => new Date().getFullYear())
   var [month, setMonth] = useState(() => new Date().getMonth())
   var opacityRef = useRef<HTMLDivElement>(null)
+  var [cellPopup, setCellPopup] = useState<{ date: string; x: number; y: number } | null>(null)
+  var cellHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   var todayStr = useMemo(() => {
     var d = new Date()
@@ -172,6 +174,22 @@ export default function FloatingApp() {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId)
     resizeRef.current = null
   }
+
+  var getTasksForDate = useCallback((date: string) =>
+    items.filter(t => { var s = t.startDate || ''; var e = t.endDate || s; return s <= date && e >= date }),
+  [items])
+
+  var handleCellMouseEnter = useCallback((date: string, e: React.MouseEvent) => {
+    var rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    cellHoverTimer.current = setTimeout(() => {
+      setCellPopup({ date, x: rect.left + rect.width / 2, y: rect.bottom + 4 })
+    }, 400)
+  }, [])
+
+  var handleCellMouseLeave = useCallback(() => {
+    if (cellHoverTimer.current) clearTimeout(cellHoverTimer.current)
+    setCellPopup(null)
+  }, [])
 
   // ─── 日历 ────────────────────────────────────
   var goPrev = () => { if (month === 0) { setYear(year - 1); setMonth(11) } else setMonth(month - 1) }
@@ -274,7 +292,7 @@ export default function FloatingApp() {
   var BAR_H = 11
 
   return (
-    <div
+    <><div
       style={{
         width: '100%',
         height: '100vh',
@@ -491,8 +509,14 @@ export default function FloatingApp() {
                           background: isToday ? (isDark ? 'rgba(102,126,234,0.08)' : 'rgba(102,126,234,0.04)') : 'transparent',
                           overflow: 'hidden',
                         }}
-                        onMouseEnter={(e) => { if (!isToday) e.currentTarget.style.background = hoverBg }}
-                        onMouseLeave={(e) => { if (!isToday) e.currentTarget.style.background = isToday ? (isDark ? 'rgba(102,126,234,0.08)' : 'rgba(102,126,234,0.04)') : 'transparent' }}
+                        onMouseEnter={(e) => {
+                          if (!isToday) e.currentTarget.style.background = hoverBg
+                          handleCellMouseEnter(cell.date, e)
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isToday) e.currentTarget.style.background = isToday ? (isDark ? 'rgba(102,126,234,0.08)' : 'rgba(102,126,234,0.04)') : 'transparent'
+                          handleCellMouseLeave()
+                        }}
                       >
                         <span style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -563,5 +587,51 @@ export default function FloatingApp() {
         </div>
       </div>
     </div>
-  )
+
+    {/* ── 日期悬停任务浮层 ── */}
+    {cellPopup && (() => {
+      var popupTasks = getTasksForDate(cellPopup.date)
+      if (popupTasks.length === 0) return null
+      var popW = 160
+      var left = Math.min(Math.max(cellPopup.x - popW / 2, 4), window.innerWidth - popW - 4)
+      return (
+        <div
+          style={{
+            position: 'fixed',
+            left,
+            top: cellPopup.y,
+            width: `${popW}px`,
+            background: isDark ? 'rgba(30,30,38,0.97)' : 'rgba(255,255,255,0.97)',
+            borderRadius: '10px',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.18)',
+            padding: '6px',
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+        >
+          <p style={{ fontSize: '9px', fontWeight: 700, color: isDark ? '#71717a' : '#a1a1aa', marginBottom: '4px', padding: '0 2px' }}>
+            {cellPopup.date} · {popupTasks.length} 个任务
+          </p>
+          {popupTasks.map(t => (
+            <div key={t.id} style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              padding: '3px 4px', borderRadius: '6px', marginBottom: '2px',
+            }}>
+              <span style={{
+                width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                background: getTaskColor(t.id, t.color), opacity: t.done ? 0.4 : 1,
+              }} />
+              <span style={{
+                fontSize: '10px', color: t.done ? (isDark ? '#52525b' : '#a1a1aa') : (isDark ? '#e4e4e7' : '#3f3f46'),
+                textDecoration: t.done ? 'line-through' : 'none',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {t.title}
+              </span>
+            </div>
+          ))}
+        </div>
+      )
+    })()}
+  </>)
 }

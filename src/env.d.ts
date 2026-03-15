@@ -84,6 +84,7 @@ interface Window {
       hide(): void
       minimize(): void
       togglePin(): void
+      setHeight(height: number): void
     }
     floating: {
       create(): Promise<{ success: boolean }>

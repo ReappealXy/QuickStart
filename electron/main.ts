@@ -479,26 +479,26 @@ function migrateToV3(): void {
 // ============================================================
 function createWindow(): void {
   const display = screen.getPrimaryDisplay()
-  const { width: sw } = display.workAreaSize
-  const { y: wy } = display.workArea
-  const maxH = display.workAreaSize.height
-  const winW = 400
-  const winH = Math.min(700, maxH)
+  const { width: sw, height: sh } = display.workAreaSize
+  const { x: wx, y: wy } = display.workArea
+  const winW = 700
+  const winH = 140
 
   mainWindow = new BrowserWindow({
     width: winW,
     height: winH,
-    x: sw - winW,
-    y: wy + Math.floor((maxH - winH) / 2),
+    x: wx + Math.floor((sw - winW) / 2),
+    y: wy + Math.floor((sh - winH) / 2),
     frame: false,
-    resizable: true,
-    minWidth: 340,
-    maxWidth: 520,
-    minHeight: 400,
+    resizable: false,
+    minWidth: 600,
+    maxWidth: 800,
+    minHeight: 120,
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
-    backgroundColor: '#f8fafc',
+    transparent: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -530,11 +530,14 @@ function createWindow(): void {
 
 function showWindow(): void {
   if (!mainWindow) return
-  // Re-position to right edge, keep current size
   const display = screen.getPrimaryDisplay()
-  const { width: sw } = display.workAreaSize
+  const { width: sw, height: sh } = display.workAreaSize
+  const { x: wx, y: wy } = display.workArea
   const bounds = mainWindow.getBounds()
-  mainWindow.setPosition(sw - bounds.width, bounds.y)
+  mainWindow.setPosition(
+    wx + Math.floor((sw - bounds.width) / 2),
+    wy + Math.floor((sh - bounds.height) / 2)
+  )
   mainWindow.show()
   mainWindow.focus()
 }
@@ -981,6 +984,16 @@ function setupIPC(): void {
   ipcMain.on('window:toggle-pin', () => {
     if (!mainWindow) return
     mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop())
+  })
+  ipcMain.on('window:set-height', (_e, height: number) => {
+    if (!mainWindow) return
+    const bounds = mainWindow.getBounds()
+    const display = screen.getPrimaryDisplay()
+    const { height: sh } = display.workAreaSize
+    const { y: wy } = display.workArea
+    const h = Math.min(Math.max(height, 120), sh)
+    const newY = wy + Math.floor((sh - h) / 2)
+    mainWindow.setBounds({ x: bounds.x, y: newY, width: bounds.width, height: h }, true)
   })
 
   // ---- Floating Window ----

@@ -19,92 +19,91 @@ body,
 }
 
 /* ============ Custom scrollbar ============ */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.08);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0,0,0,0.15);
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.08);
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.15);
-}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.15); }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
 /* ============ Electron drag ============ */
-.drag-region {
-  -webkit-app-region: drag;
-}
-.no-drag {
-  -webkit-app-region: no-drag;
-}
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
 
 /* ============ Selection ============ */
-::selection {
-  background-color: rgba(139, 92, 246, 0.2);
-}
+::selection { background-color: rgba(64, 158, 255, 0.2); }
 
 /* ============ Placeholder ============ */
-::placeholder {
-  color: #a1a1aa;
-  opacity: 1;
-}
-.dark ::placeholder {
-  color: #52525b;
-}
+::placeholder { color: #aaa; opacity: 1; }
+.dark ::placeholder { color: #555; }
 
-/* ============ Color tokens (unified across all pages) ============ */
+/* ============ Light theme (default) ============ */
 :root {
-  --container-padding: 18px;
-  --c-primary-from: #667eea;
-  --c-primary-to: #764ba2;
+  --container-padding: 16px;
+  --qs-bg: #f0f1f5;
+  --qs-surface: #ffffff;
+  --qs-border: rgba(0,0,0,0.06);
+  --qs-text: #2c2c2c;
+  --qs-text-secondary: #888;
+  --qs-text-muted: #bbb;
+  --qs-primary: #4f7df9;
+  --qs-primary-light: rgba(79,125,249,0.08);
+  --qs-hover: rgba(0,0,0,0.04);
+  --qs-icon-bg: rgba(0,0,0,0.04);
+  --qs-search-bg: #f5f6f8;
+  --qs-search-border: rgba(0,0,0,0.08);
+  --qs-shadow: 0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+
+  --c-primary-from: #4f7df9;
+  --c-primary-to: #6d9bff;
   --c-accent-from: #f093fb;
   --c-accent-to: #f5576c;
-  --c-success-from: #43e97b;
-  --c-success-to: #38f9d7;
-  --c-muted-from: #a18cd1;
-  --c-muted-to: #fbc2eb;
-  --c-warm-from: #fa709a;
-  --c-warm-to: #fee140;
+  --c-success-from: #67c23a;
+  --c-success-to: #85ce61;
+  --c-muted-from: #909399;
+  --c-muted-to: #c0c4cc;
+  --c-warm-from: #e6a23c;
+  --c-warm-to: #ebb563;
   --gradient-primary: linear-gradient(135deg, var(--c-primary-from) 0%, var(--c-primary-to) 100%);
   --gradient-accent: linear-gradient(135deg, var(--c-accent-from) 0%, var(--c-accent-to) 100%);
   --gradient-success: linear-gradient(135deg, var(--c-success-from) 0%, var(--c-success-to) 100%);
   --gradient-muted: linear-gradient(135deg, var(--c-muted-from) 0%, var(--c-muted-to) 100%);
-  --shadow-primary: 0 4px 16px -3px rgba(102, 126, 234, 0.45);
+  --shadow-primary: 0 4px 16px -3px rgba(79, 125, 249, 0.35);
 }
 
-/* ============ Gradient utility classes ============ */
-.gradient-primary {
-  background: var(--gradient-primary);
-}
-.gradient-accent {
-  background: var(--gradient-accent);
-}
-.gradient-success {
-  background: var(--gradient-success);
-}
-.gradient-muted {
-  background: var(--gradient-muted);
+/* ============ Dark theme ============ */
+.dark {
+  --qs-bg: #1a1b1e;
+  --qs-surface: #242529;
+  --qs-border: rgba(255,255,255,0.06);
+  --qs-text: #e0e0e0;
+  --qs-text-secondary: #888;
+  --qs-text-muted: #555;
+  --qs-primary: #5b8def;
+  --qs-primary-light: rgba(91,141,239,0.12);
+  --qs-hover: rgba(255,255,255,0.05);
+  --qs-icon-bg: rgba(255,255,255,0.06);
+  --qs-search-bg: rgba(255,255,255,0.04);
+  --qs-search-border: rgba(255,255,255,0.06);
+  --qs-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2);
 }
 
-/* ============ Glass morphism ============ */
+/* ============ Gradient utility classes (keep for sub-components) ============ */
+.gradient-primary { background: var(--gradient-primary); }
+.gradient-accent { background: var(--gradient-accent); }
+.gradient-success { background: var(--gradient-success); }
+.gradient-muted { background: var(--gradient-muted); }
+
+/* ============ Glass morphism (keep for sub-components) ============ */
 .glass {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
 }
 .dark .glass {
-  background: rgba(24, 24, 27, 0.75);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(36, 37, 41, 0.85);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
 }
 
 /* ============ Card shadows ============ */
@@ -148,15 +147,9 @@ button, input, textarea, a {
   to { transform: translateX(0); opacity: 1; }
 }
 
-.animate-fadeInUp {
-  animation: fadeInUp 0.3s ease-out forwards;
-}
-.animate-fadeIn {
-  animation: fadeIn 0.2s ease-out forwards;
-}
-.animate-scaleIn {
-  animation: scaleIn 0.2s ease-out forwards;
-}
+.animate-fadeInUp { animation: fadeInUp 0.3s ease-out forwards; }
+.animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
+.animate-scaleIn { animation: scaleIn 0.2s ease-out forwards; }
 
 /* Stagger children */
 .stagger > *:nth-child(1) { animation-delay: 0ms; }
@@ -167,3 +160,234 @@ button, input, textarea, a {
 .stagger > *:nth-child(6) { animation-delay: 200ms; }
 .stagger > *:nth-child(7) { animation-delay: 240ms; }
 .stagger > *:nth-child(8) { animation-delay: 280ms; }
+
+/* ================================================================
+   uTools-style Horizontal Layout
+   ================================================================ */
+
+.qs-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--qs-bg);
+  border-radius: 14px;
+  box-shadow: var(--qs-shadow);
+  border: 1px solid var(--qs-border);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+/* ---- Title Bar (combined with search) ---- */
+.qs-titlebar {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 10px 0 14px;
+  flex-shrink: 0;
+  background: var(--qs-surface);
+  border-bottom: 1px solid var(--qs-border);
+  border-radius: 14px 14px 0 0;
+  user-select: none;
+  gap: 8px;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.qs-titlebar-logo {
+  flex-shrink: 0;
+}
+
+.qs-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--qs-primary);
+}
+
+/* ---- Inline search ---- */
+.qs-search-inline {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--qs-search-bg);
+  border: 1px solid var(--qs-search-border);
+  border-radius: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.3s;
+}
+.qs-search-inline:focus-within {
+  border-color: var(--qs-primary);
+  box-shadow: 0 0 0 3px var(--qs-primary-light);
+}
+
+.qs-search-icon {
+  color: var(--qs-text-muted);
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.qs-search-input {
+  flex: 1;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--qs-text);
+}
+
+.qs-search-clear {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: var(--qs-hover);
+  border-radius: 50%;
+  color: var(--qs-text-secondary);
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.qs-search-clear:hover {
+  background: rgba(0,0,0,0.1);
+}
+.dark .qs-search-clear:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+/* ---- Header nav (feature mode) ---- */
+.qs-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.qs-back-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--qs-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.qs-back-btn:hover {
+  background: var(--qs-hover);
+  color: var(--qs-text);
+}
+
+.qs-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--qs-text);
+}
+
+/* ---- Window control buttons ---- */
+.qs-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.qs-titlebar-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--qs-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.qs-titlebar-btn:hover {
+  background: var(--qs-hover);
+  color: var(--qs-text);
+}
+.qs-titlebar-btn--active {
+  color: var(--qs-primary);
+  background: var(--qs-primary-light);
+}
+.qs-titlebar-btn--active:hover {
+  background: var(--qs-primary-light);
+  color: var(--qs-primary);
+}
+.qs-titlebar-btn--close:hover {
+  background: rgba(245,108,108,0.1);
+  color: #f56c6c;
+}
+
+/* ---- Home / Search Mode ---- */
+.qs-home {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- Icon Bar (horizontal feature icons) ---- */
+.qs-icon-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 16px 14px;
+  flex-shrink: 0;
+}
+
+.qs-icon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 10px;
+  min-width: 62px;
+  transition: background 0.15s;
+}
+.qs-icon-item:hover {
+  background: var(--qs-hover);
+}
+
+.qs-icon-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background: var(--qs-icon-bg);
+}
+
+.qs-icon-label {
+  font-size: 11px;
+  color: var(--qs-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ---- Feature Content (expanded mode) ---- */
+.qs-feature-content {
+  flex: 1;
+  overflow: hidden;
+  animation: fadeIn 0.15s ease-out;
+}

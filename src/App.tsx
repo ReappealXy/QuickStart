@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react'
 import TitleBar from './components/Layout/TitleBar'
-import TabBar from './components/Layout/TabBar'
+import FeatureList, { ALL_FEATURES } from './components/Layout/FeatureList'
 import NotesTab from './components/Notes/NotesTab'
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -9,12 +9,23 @@ import TranslatorTab from './components/Translator/TranslatorTab'
 import AITab from './components/AI/AITab'
 import ClipboardTab from './components/Clipboard/ClipboardTab'
 import PromptTab from './components/Prompts/PromptTab'
-import ToolsTab from './components/Tools/ToolsTab'
-import ToolSubPageHeader from './components/Tools/ToolSubPageHeader'
 import SettingsTab from './components/Settings/SettingsTab'
-import { useSettingsStore } from './stores/settingsStore'
+import { useSettingsStore, type TabType } from './stores/settingsStore'
 import { useTodoStore } from './stores/todoStore'
 import { useTimerStore, startGlobalTimerTick, stopGlobalTimerTick, setTimerCallbacks } from './stores/timerStore'
+
+const COMPACT_HEIGHT = 140
+const EXPANDED_HEIGHT = 540
+
+const FEATURE_TITLES: Record<string, string> = {
+  notes: '笔记',
+  todo: '清单',
+  translate: '翻译',
+  ai: 'AI 助手',
+  clipboard: '剪贴板',
+  prompts: '提示词',
+  settings: '设置',
+}
 
 function formatTimer(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -24,6 +35,7 @@ function formatTimer(seconds: number): string {
 
 export default function App() {
   const activeTab = useSettingsStore((s) => s.activeTab)
+  const setActiveTab = useSettingsStore((s) => s.setActiveTab)
   const loadConfig = useSettingsStore((s) => s.loadConfig)
 
   const timerFinishedModal = useTimerStore((s) => s.timerFinishedModal)
@@ -31,8 +43,9 @@ export default function App() {
   const activeTimerId = useTimerStore((s) => s.activeTimerId)
 
   const [, forceUpdate] = useState(0)
+  const [searchMode, setSearchMode] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
 
-  // Setup timer callbacks for updating todo items
   useEffect(() => {
     setTimerCallbacks({
       onTick: () => forceUpdate((n) => n + 1),
@@ -45,7 +58,6 @@ export default function App() {
     })
   }, [setTimerFinishedModal])
 
-  // Start global timer tick when there's an active timer
   useEffect(() => {
     if (activeTimerId) {
       startGlobalTimerTick()
@@ -59,7 +71,6 @@ export default function App() {
 
   useEffect(() => { loadConfig() }, [loadConfig])
 
-  // 主题跟随 store
   useEffect(() => {
     var applyTheme = (dark: boolean) => {
       if (dark) document.documentElement.classList.add('dark')
@@ -75,77 +86,97 @@ export default function App() {
     applyTheme(theme === 'dark')
   }, [theme])
 
+  const handleSelectFeature = useCallback((tab: TabType) => {
+    setActiveTab(tab)
+    setSearchMode(false)
+    setSearchQuery('')
+    window.api?.window?.setHeight?.(EXPANDED_HEIGHT)
+  }, [setActiveTab])
+
+  const handleBack = useCallback(() => {
+    setSearchMode(true)
+    setSearchQuery('')
+    window.api?.window?.setHeight?.(COMPACT_HEIGHT)
+  }, [])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.api?.window?.hide?.()
+      if (e.key === 'Escape') {
+        if (!searchMode) {
+          handleBack()
+        } else {
+          window.api?.window?.hide?.()
+        }
+      }
       if (e.ctrlKey && e.key >= '1' && e.key <= '3') {
         e.preventDefault()
-        const tabs = ['notes', 'todo', 'tools'] as const
-        useSettingsStore.getState().setActiveTab(tabs[parseInt(e.key) - 1])
+        const tabs: TabType[] = ['notes', 'todo', 'translate']
+        handleSelectFeature(tabs[parseInt(e.key) - 1])
       }
       if (e.ctrlKey && e.key === ',') {
         e.preventDefault()
-        useSettingsStore.getState().setActiveTab('settings')
+        handleSelectFeature('settings')
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [searchMode, handleBack, handleSelectFeature])
+
+  const filteredFeatures = useMemo(() => {
+    if (!searchQuery.trim()) return ALL_FEATURES
+    const q = searchQuery.toLowerCase()
+    return ALL_FEATURES.filter(
+      (f) => f.label.toLowerCase().includes(q) || f.desc.toLowerCase().includes(q)
+    )
+  }, [searchQuery])
+
+  const handleSearchEnter = useCallback(() => {
+    if (filteredFeatures.length > 0) {
+      handleSelectFeature(filteredFeatures[0].id)
+    }
+  }, [filteredFeatures, handleSelectFeature])
 
   var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   return (
-    <div className="h-full flex flex-col overflow-hidden"
-      style={{
-        background: 'linear-gradient(160deg, #f8f7ff 0%, #f0eeff 30%, #f5f0ff 60%, #fdf2f8 100%)'
-      }}
-    >
-      <TitleBar />
-      <TabBar />
-      <div className="flex-1 overflow-hidden animate-fadeIn">
-        {activeTab === 'notes' && <NotesTab />}
-        {activeTab === 'todo' && (
-          <ErrorBoundary>
-            <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: '#a1a1aa', fontSize: '13px' }}>加载中…</div>}>
-              <TodoTab />
-            </Suspense>
-          </ErrorBoundary>
-        )}
-        {activeTab === 'tools' && <ToolsTab />}
-        {activeTab === 'translate' && (
-          <div className="flex flex-col h-full">
-            <ToolSubPageHeader title="翻译" />
-            <div className="flex-1 min-h-0 overflow-hidden"><TranslatorTab /></div>
-          </div>
-        )}
-        {activeTab === 'ai' && (
-          <div className="flex flex-col h-full">
-            <ToolSubPageHeader title="AI 助手" />
-            <div className="flex-1 min-h-0 overflow-hidden"><AITab /></div>
-          </div>
-        )}
-        {activeTab === 'clipboard' && (
-          <div className="flex flex-col h-full">
-            <ToolSubPageHeader title="剪贴板" />
-            <div className="flex-1 min-h-0 overflow-hidden"><ClipboardTab /></div>
-          </div>
-        )}
-        {activeTab === 'prompts' && (
-          <div className="flex flex-col h-full">
-            <ToolSubPageHeader title="提示词" />
-            <div className="flex-1 min-h-0 overflow-hidden"><PromptTab /></div>
-          </div>
-        )}
-        {activeTab === 'settings' && <SettingsTab />}
-      </div>
+    <div className="qs-root">
+      <TitleBar
+        searchMode={searchMode}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onBack={handleBack}
+        featureTitle={FEATURE_TITLES[activeTab] || activeTab}
+        onSearchEnter={handleSearchEnter}
+      />
 
-      {/* Global Timer Finished Modal */}
+      {searchMode ? (
+        <div className="qs-home">
+          <FeatureList features={filteredFeatures} onSelect={handleSelectFeature} />
+        </div>
+      ) : (
+        <div className="qs-feature-content">
+          {activeTab === 'notes' && <NotesTab />}
+          {activeTab === 'todo' && (
+            <ErrorBoundary>
+              <Suspense fallback={<div style={{ padding: '24px', textAlign: 'center', color: '#666', fontSize: '13px' }}>加载中…</div>}>
+                <TodoTab />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {activeTab === 'translate' && <TranslatorTab />}
+          {activeTab === 'ai' && <AITab />}
+          {activeTab === 'clipboard' && <ClipboardTab />}
+          {activeTab === 'prompts' && <PromptTab />}
+          {activeTab === 'settings' && <SettingsTab />}
+        </div>
+      )}
+
       {timerFinishedModal && (
         <div
           className="fixed inset-0 flex items-center justify-center"
           style={{
             zIndex: 9999,
-            background: 'rgba(0,0,0,0.2)',
+            background: 'rgba(0,0,0,0.4)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             animation: 'fadeIn 0.25s ease-out',
@@ -157,39 +188,35 @@ export default function App() {
             style={{
               width: '300px',
               padding: '28px 24px',
-              borderRadius: '24px',
-              background: isDark ? 'rgba(30, 30, 35, 0.95)' : 'rgba(255, 255, 255, 0.92)',
-              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(255, 255, 255, 0.9)',
-              boxShadow: isDark ? '0 16px 48px rgba(0, 0, 0, 0.5)' : '0 16px 48px rgba(0, 0, 0, 0.12)',
+              borderRadius: '20px',
+              background: isDark ? 'rgba(40, 40, 45, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0,0,0,0.06)',
+              boxShadow: '0 16px 48px rgba(0, 0, 0, 0.3)',
               animation: 'scaleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Checkmark Icon */}
             <div
               className="flex items-center justify-center rounded-full mb-4"
               style={{
-                width: '64px',
-                height: '64px',
-                background: 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)',
-                boxShadow: '0 8px 24px rgba(34, 197, 94, 0.35)',
+                width: '56px',
+                height: '56px',
+                background: '#67c23a',
               }}
             >
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
 
-            {/* Title */}
-            <h3 className="text-[18px] font-bold mb-2" style={{ color: isDark ? '#fff' : '#1a1a1a' }}>
+            <h3 className="text-[17px] font-bold mb-2" style={{ color: isDark ? '#e0e0e0' : '#1a1a1a' }}>
               计时结束
             </h3>
 
-            {/* Task Name */}
             <p
-              className="text-[14px] text-center mb-1 px-4"
+              className="text-[13px] text-center mb-1 px-4"
               style={{
-                color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)',
                 maxWidth: '100%',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -199,20 +226,19 @@ export default function App() {
               {timerFinishedModal.taskName}
             </p>
 
-            {/* Duration */}
-            <p className="text-[13px] font-medium mb-6" style={{ color: '#7C4DFF' }}>
+            <p className="text-[12px] font-medium mb-5" style={{ color: '#409eff' }}>
               专注时长：{formatTimer(timerFinishedModal.duration)}
             </p>
 
-            {/* Button */}
             <button
               onClick={() => setTimerFinishedModal(null)}
-              className="w-full flex items-center justify-center text-[15px] font-semibold text-white transition-all duration-200"
+              className="w-full flex items-center justify-center text-[14px] font-semibold text-white"
               style={{
-                height: '46px',
-                borderRadius: '14px',
-                background: 'linear-gradient(135deg, #7C4DFF 0%, #9575FF 100%)',
-                boxShadow: '0 2px 12px rgba(124, 77, 255, 0.25)',
+                height: '40px',
+                borderRadius: '10px',
+                background: '#409eff',
+                border: 'none',
+                cursor: 'pointer',
               }}
             >
               知道了

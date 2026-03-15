@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('api', {
     hide: () => ipcRenderer.send('window:hide'),
     minimize: () => ipcRenderer.send('window:minimize'),
     togglePin: () => ipcRenderer.send('window:toggle-pin'),
+    setHeight: (height: number) => ipcRenderer.send('window:set-height', height),
   },
   floating: {
     create: () => ipcRenderer.invoke('floating:create'),

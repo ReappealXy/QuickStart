@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Search, Plus, Pin, Pencil, Trash2, Copy, Check, Download, Upload, X, RotateCcw, FileText } from 'lucide-react'
+import { Search, Plus, Pin, Pencil, Trash2, Copy, Check, Download, Upload, X, RotateCcw, FileText, Sparkles } from 'lucide-react'
+import { BUILTIN_PROMPTS } from '../../data/builtinPrompts'
 
 /** @return 唯一标签列表 */
 var extractTags = (items: PromptItem[]): string[] =>
@@ -65,6 +66,13 @@ export default function PromptTab() {
     setTimeout(() => setCopiedId(null), 1500)
   }
 
+  /** 复制指定内容（用于详情弹窗中按当前 Tab 复制） */
+  var handleCopyContent = async (content: string, itemId: string) => {
+    await navigator.clipboard.writeText(content)
+    setCopiedId(itemId)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
+
   /** @param id 切换置顶状态 */
   var handleTogglePin = async (id: string) => {
     var target = items.find(p => p.id === id)
@@ -117,6 +125,7 @@ export default function PromptTab() {
       name: restored.name,
       tag: restored.tag,
       content: restored.content,
+      contentZh: restored.contentZh,
       isPinned: restored.isPinned,
     })
     loadItems()
@@ -146,6 +155,20 @@ export default function PromptTab() {
 
   var handleImport = () => { fileInputRef.current?.click() }
 
+  var [importingBuiltin, setImportingBuiltin] = useState(false)
+  var handleImportBuiltin = async () => {
+    if (importingBuiltin) return
+    setImportingBuiltin(true)
+    try {
+      await window.api.prompts.import(BUILTIN_PROMPTS)
+      loadItems()
+    } catch {
+      alert('导入失败')
+    } finally {
+      setImportingBuiltin(false)
+    }
+  }
+
   var handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     var file = e.target.files?.[0]
     if (!file) return
@@ -163,7 +186,7 @@ export default function PromptTab() {
    * 保存回调（新增或编辑完成后刷新列表）
    * @param data 表单数据
    */
-  var handleSave = async (data: { id?: string; name: string; tag: string; content: string }) => {
+  var handleSave = async (data: { id?: string; name: string; tag: string; content: string; contentZh?: string }) => {
     await window.api.prompts.save(data)
     setModalOpen(false)
     setEditingItem(null)
@@ -246,6 +269,7 @@ export default function PromptTab() {
         className="flex items-center justify-center gap-3 flex-shrink-0"
         style={{ padding: '8px 0 10px', borderTop: '1px solid rgba(0,0,0,0.05)' }}
       >
+        <BottomBtn icon={Sparkles} label={importingBuiltin ? '导入中...' : `模板库 (${BUILTIN_PROMPTS.length})`} onClick={handleImportBuiltin} />
         <BottomBtn icon={Download} label="导出" onClick={handleExport} />
         <BottomBtn icon={Upload} label="导入" onClick={handleImport} />
         <BottomBtn icon={FileText} label="导入规范" onClick={() => setTemplateOpen(true)} />
@@ -337,7 +361,7 @@ export default function PromptTab() {
       {viewingItem && (
         <PromptDetailModal
           item={viewingItem}
-          onCopy={() => handleCopy(viewingItem)}
+          onCopyContent={(content) => handleCopyContent(content, viewingItem.id)}
           copied={copiedId === viewingItem.id}
           onEdit={() => { setViewingItem(null); handleEdit(viewingItem) }}
           onClose={() => setViewingItem(null)}
@@ -523,14 +547,17 @@ function BottomBtn({
 
 /* ── 详情查看弹窗 ── */
 function PromptDetailModal({
-  item, onCopy, copied, onEdit, onClose,
+  item, onCopyContent, copied, onEdit, onClose,
 }: {
   item: PromptItem
-  onCopy: () => void
+  onCopyContent: (content: string) => void
   copied: boolean
   onEdit: () => void
   onClose: () => void
 }) {
+  var [activeTab, setActiveTab] = useState<'original' | 'zh'>('original')
+  var displayContent = activeTab === 'original' ? item.content : (item.contentZh?.trim() || '暂无翻译')
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center"
@@ -579,8 +606,42 @@ function PromptDetailModal({
           </div>
         </div>
 
+        {/* 原文 | 中文 切换 */}
+        <div className="flex gap-1" style={{ padding: '12px 24px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <button
+            onClick={() => setActiveTab('original')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+              background: activeTab === 'original' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'rgba(0,0,0,0.04)',
+              color: activeTab === 'original' ? '#fff' : '#71717a',
+            }}
+          >
+            原文
+          </button>
+          <button
+            onClick={() => setActiveTab('zh')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+              background: activeTab === 'zh' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'rgba(0,0,0,0.04)',
+              color: activeTab === 'zh' ? '#fff' : '#71717a',
+            }}
+          >
+            中文
+          </button>
+        </div>
+
         {/* 内容 */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 24px 20px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px 20px' }}>
           <div style={{
             fontSize: '13px',
             color: '#3f3f46',
@@ -588,14 +649,14 @@ function PromptDetailModal({
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}>
-            {item.content}
+            {displayContent}
           </div>
         </div>
 
         {/* 底部操作 */}
         <div className="flex items-center gap-2" style={{ padding: '14px 24px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
           <button
-            onClick={onCopy}
+            onClick={() => onCopyContent(displayContent)}
             className="flex items-center gap-1.5"
             style={{
               flex: 1,
@@ -651,7 +712,8 @@ function ImportTemplateModal({ onClose }: { onClose: () => void }) {
   {
     "name": "提示词名称",
     "tag": "分类标签",
-    "content": "提示词正文内容"
+    "content": "提示词正文内容（原文）",
+    "contentZh": "中文翻译（选填）"
   }
 ]`
 
@@ -691,7 +753,8 @@ function ImportTemplateModal({ onClose }: { onClose: () => void }) {
 
         <div style={{ fontSize: '11px', color: '#52525b', marginBottom: '12px', lineHeight: '1.8' }}>
           <div><b>name</b>（必填）：提示词名称</div>
-          <div><b>content</b>（必填）：提示词正文</div>
+          <div><b>content</b>（必填）：提示词正文（原文）</div>
+          <div><b>contentZh</b>（选填）：中文翻译</div>
           <div><b>tag</b>（选填）：分类标签</div>
           <div><b>isPinned</b>（选填）：是否置顶，默认 false</div>
         </div>
@@ -744,12 +807,13 @@ function PromptModal({
 }: {
   item: PromptItem | null
   existingTags: string[]
-  onSave: (data: { id?: string; name: string; tag: string; content: string }) => void
+  onSave: (data: { id?: string; name: string; tag: string; content: string; contentZh?: string }) => void
   onClose: () => void
 }) {
   var [name, setName] = useState(item?.name || '')
   var [tag, setTag] = useState(item?.tag || '')
   var [content, setContent] = useState(item?.content || '')
+  var [contentZh, setContentZh] = useState(item?.contentZh || '')
   var [showTagDropdown, setShowTagDropdown] = useState(false)
   var nameRef = useRef<HTMLInputElement>(null)
 
@@ -757,7 +821,7 @@ function PromptModal({
 
   var handleSubmit = () => {
     if (!name.trim() || !content.trim()) { alert('名称和内容不能为空'); return }
-    onSave({ id: item?.id, name: name.trim(), tag: tag.trim(), content: content.trim() })
+    onSave({ id: item?.id, name: name.trim(), tag: tag.trim(), content: content.trim(), contentZh: contentZh.trim() })
   }
 
   return (
@@ -829,12 +893,21 @@ function PromptModal({
           )}
         </div>
 
-        <label style={{ fontSize: '12px', fontWeight: 600, color: '#52525b', marginBottom: '4px', display: 'block' }}>内容</label>
+        <label style={{ fontSize: '12px', fontWeight: 600, color: '#52525b', marginBottom: '4px', display: 'block' }}>原文</label>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="提示词内容..."
-          rows={5}
+          placeholder="提示词正文（原文）..."
+          rows={4}
+          style={{ width: '100%', padding: '8px 12px', fontSize: '13px', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '10px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: '1.6', marginBottom: '12px', boxSizing: 'border-box' }}
+        />
+
+        <label style={{ fontSize: '12px', fontWeight: 600, color: '#52525b', marginBottom: '4px', display: 'block' }}>中文翻译（选填）</label>
+        <textarea
+          value={contentZh}
+          onChange={(e) => setContentZh(e.target.value)}
+          placeholder="中文翻译，填写后在详情中可切换 原文/中文 查看..."
+          rows={4}
           style={{ width: '100%', padding: '8px 12px', fontSize: '13px', border: '1px solid rgba(0,0,0,0.1)', borderRadius: '10px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: '1.6', marginBottom: '18px', boxSizing: 'border-box' }}
         />
 

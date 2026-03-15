@@ -2685,20 +2685,42 @@ function setupIPC(): void {
    * @param prompt 提示词对象，无 id 时新增
    * @return { success, id }
    */
-  ipcMain.handle('prompts:save', (_e, prompt: { id?: string; name: string; tag: string; content: string; isPinned?: boolean }) => {
+  ipcMain.handle('prompts:save', (_e, prompt: { id?: string; name: string; tag: string; content: string; contentZh?: string; isPinned?: boolean }) => {
     try {
-      var list = safeReadJSON<{ id: string; name: string; tag: string; content: string; isPinned: boolean; createdAt: number }[]>(getPromptsFilePath(), [])
+      var list = safeReadJSON<{ id: string; name: string; tag: string; content: string; contentZh?: string; isPinned: boolean; createdAt: number }[]>(getPromptsFilePath(), [])
       if (prompt.id) {
         var idx = list.findIndex(p => p.id === prompt.id)
         if (idx >= 0) {
-          list[idx] = { ...list[idx], name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? list[idx].isPinned }
+          list[idx] = {
+            ...list[idx],
+            name: prompt.name,
+            tag: prompt.tag,
+            content: prompt.content,
+            contentZh: prompt.contentZh !== undefined ? prompt.contentZh : list[idx].contentZh,
+            isPinned: prompt.isPinned ?? list[idx].isPinned,
+          }
         } else {
-          // id 存在但列表中找不到（撤销删除等场景），追加回去
-          list.push({ id: prompt.id, name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? false, createdAt: Date.now() })
+          list.push({
+            id: prompt.id,
+            name: prompt.name,
+            tag: prompt.tag,
+            content: prompt.content,
+            contentZh: prompt.contentZh || '',
+            isPinned: prompt.isPinned ?? false,
+            createdAt: Date.now(),
+          })
         }
       } else {
         var newId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
-        list.push({ id: newId, name: prompt.name, tag: prompt.tag, content: prompt.content, isPinned: prompt.isPinned ?? false, createdAt: Date.now() })
+        list.push({
+          id: newId,
+          name: prompt.name,
+          tag: prompt.tag,
+          content: prompt.content,
+          contentZh: prompt.contentZh || '',
+          isPinned: prompt.isPinned ?? false,
+          createdAt: Date.now(),
+        })
         prompt.id = newId
       }
       safeWriteJSON(getPromptsFilePath(), list)
@@ -2725,6 +2747,7 @@ function setupIPC(): void {
         name: item.name || '',
         tag: item.tag || '',
         content: item.content || '',
+        contentZh: item.contentZh || '',
         isPinned: !!item.isPinned,
         createdAt: item.createdAt || Date.now(),
       }))

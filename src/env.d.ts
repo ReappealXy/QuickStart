@@ -106,7 +106,7 @@ interface Window {
     }
     prompts: {
       list(): Promise<PromptItem[]>
-      save(prompt: { id?: string; name: string; tag: string; content: string; isPinned?: boolean }): Promise<{ success: boolean; id?: string; error?: string }>
+      save(prompt: { id?: string; name: string; tag: string; content: string; contentZh?: string; isPinned?: boolean }): Promise<{ success: boolean; id?: string; error?: string }>
       delete(id: string): Promise<{ success: boolean; error?: string }>
       import(items: unknown[]): Promise<{ success: boolean; count?: number; error?: string }>
       export(): Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
@@ -255,6 +255,7 @@ interface PromptItem {
   name: string
   tag: string
   content: string
+  contentZh?: string
   isPinned: boolean
   createdAt: number
 }

@@ -287,8 +287,8 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
         ))}
       </div>
 
-      {/* ── 日历网格主体 ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {/* ── 日历网格主体（可滚动，确保 6 行月份完整可见） ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto' }}>
         {Array.from({ length: rows }).map((_, rowIdx) => {
           var rowCells = calendarDays.slice(rowIdx * 7, rowIdx * 7 + 7)
           var rowBars = taskBars.filter(b => b.rowIdx === rowIdx)
@@ -299,7 +299,7 @@ export default function MonthCalendarView({ onSelectDate }: { onSelectDate?: (da
             <div
               key={rowIdx}
               style={{
-                flex: 1,
+                flexShrink: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 borderBottom: rowIdx < rows - 1 ? `1px solid ${BORDER}` : 'none',

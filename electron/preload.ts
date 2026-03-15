@@ -122,7 +122,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   prompts: {
     list: () => ipcRenderer.invoke('prompts:list'),
-    save: (prompt: { id?: string; name: string; tag: string; content: string; isPinned?: boolean }) =>
+    save: (prompt: { id?: string; name: string; tag: string; content: string; contentZh?: string; isPinned?: boolean }) =>
       ipcRenderer.invoke('prompts:save', prompt),
     delete: (id: string) => ipcRenderer.invoke('prompts:delete', id),
     import: (items: unknown[]) => ipcRenderer.invoke('prompts:import', items),
